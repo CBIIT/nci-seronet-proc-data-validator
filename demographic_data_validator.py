@@ -12,6 +12,7 @@ def demographic_data_validator(demo_data_object,neg_list,pos_list,re,valid_cbc_i
                 demo_data_object.valid_ID(header_name,i[1],pattern,valid_cbc_ids,error_msg,has_data_column.index[i[0]],'Error')
             for i in enumerate(missing_data_column):
                 demo_data_object.is_required(header_name,i[1],"All",missing_data_column.index[i[0]],'Error')
+
             id_error_list = [i[5] for i in demo_data_object.error_list_summary if (i[0] == "Error") and (i[4] == "Research_Participant_ID")]
             matching_values = [i for i in enumerate(test_column) if (pattern.match(i[1]) is not None) and (i[1] not in id_error_list)]
             if (len(matching_values) > 0):
@@ -46,7 +47,7 @@ def demographic_data_validator(demo_data_object,neg_list,pos_list,re,valid_cbc_i
             pos_test_value = demo_data_object.Data_Table[demo_data_object.pos_list_logic & has_logic][header_name]
             for i in enumerate(pos_test_value):
                 demo_data_object.in_list(header_name,i[1],test_string,error_msg,pos_test_value.index[i[0]],'Error')
-            test_string = ['No','Unknown','N/A']
+            test_string = ['No','N/A']
             error_msg = "Participant is SARS_CoV2 Negative. must be : " + str(test_string)
             neg_test_value = demo_data_object.Data_Table[demo_data_object.neg_list_logic & has_logic][header_name]
             for i in enumerate(neg_test_value):

@@ -9,11 +9,11 @@ def Biospecimen_validator(Biospecimen_object,neg_list,pos_list,re,valid_cbc_ids,
                 Biospecimen_object.valid_ID(header_name,i[1],pattern,valid_cbc_ids,error_msg,has_data_column.index[i[0]],'Error')
             for i in enumerate(missing_data_column):
                 Biospecimen_object.is_required(header_name,i[1],"All",missing_data_column.index[i[0]],'Error')
-            
+
             id_error_list = [i[5] for i in Biospecimen_object.error_list_summary if (i[0] == "Error") and (i[4] == "Research_Participant_ID")]
             matching_values = [i for i in enumerate(test_column) if (pattern.match(i[1]) is not None) and (i[1] not in id_error_list)]
             if (len(matching_values) > 0):
-                error_msg = "Id is not found in database or in submitted demographic file"
+                error_msg = "Id is not found in database or in submitted demographic.csv file"
                 for i in enumerate(matching_values):
                     Biospecimen_object.in_list(header_name,i[1][1],current_demo,error_msg,i[1][0],'Error')
 #################################################################################################################################################
@@ -24,7 +24,7 @@ def Biospecimen_validator(Biospecimen_object,neg_list,pos_list,re,valid_cbc_ids,
                 Biospecimen_object.valid_ID(header_name,i[1],pattern,valid_cbc_ids,error_msg,has_data_column.index[i[0]],'Error')
             for i in enumerate(missing_data_column):
                 Biospecimen_object.is_required(header_name,i[1],"All",missing_data_column.index[i[0]],'Error')
-#################################################################################################################################################
+################################################################################################################################################
         elif(header_name in ["Biospecimen_Group"]):
             error_msg = "Participant is SARS_CoV2 Positive. Value must be: Positive Sample"
             test_value = Biospecimen_object.Data_Table[Biospecimen_object.pos_list_logic][header_name]
@@ -238,13 +238,13 @@ def Biospecimen_validator(Biospecimen_object,neg_list,pos_list,re,valid_cbc_ids,
         else:
             error_msg = "Biospecimen type is " + i[1] + ", not expecting Automated Counts for this type of biospecimen"
             Biospecimen_object.write_error_msg(total_count.iloc[i[0]],'Automated_Count_Variables',error_msg,specimen_type.index[i[0]],'Warning')
-###############################################################################################################################    
+###############################################################################################################################
     test_column = Biospecimen_object.Data_Table["Research_Participant_ID"]
     pattern = re.compile('^[0-9]{2}[_]{1}[0-9]{6}$')
     matching_RPI_values = [i for i in enumerate(test_column) if pattern.match(i[1]) is not None]
 
     test_column = Biospecimen_object.Data_Table["Biospecimen_ID"]
-    pattern = re.compile('^[0-9]{2}[_]{1}[0-9]{6}[_]{1}[0-9]{3}$')     
+    pattern = re.compile('^[0-9]{2}[_]{1}[0-9]{6}[_]{1}[0-9]{3}$')
     matching_BIO_values = [i for i in enumerate(test_column) if pattern.match(i[1]) is not None]
     BIO_index,BIO_Value = map(list,zip(*matching_BIO_values))
 
@@ -253,5 +253,5 @@ def Biospecimen_validator(Biospecimen_object,neg_list,pos_list,re,valid_cbc_ids,
             if BIO_Value[BIO_index.index(i[1][0])].find(i[1][1]) == -1:
                 error_msg = "Research_Participant_ID does not agree with Biospecimen ID(" + BIO_Value[BIO_index.index(i[1][0])] + "), first 9 characters should match"
                 Biospecimen_object.write_error_msg(i[1][1],"Research_Participant_ID",error_msg,i[1][0],'Error')
-
+###############################################################################################################################
     return Biospecimen_object
