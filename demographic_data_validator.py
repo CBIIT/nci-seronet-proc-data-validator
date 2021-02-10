@@ -47,7 +47,7 @@ def demographic_data_validator(demo_data_object,neg_list,pos_list,re,valid_cbc_i
             test_logic = (demo_data_object.Data_Table['Is_Symptomatic'] == "Yes") & (demo_data_object.pos_list_logic)
             test_value = demo_data_object.Data_Table[test_logic][header_name]
             for i in range(len(test_value)):
-                demo_data_object.is_date_time(header_name,test_value.values[i],False,error_msg,test_value.index[i],'Error') 
+                demo_data_object.is_date_time(header_name,test_value.values[i],False,error_msg,test_value.index[i],'Error')
             demo_data_object.particpant_no_symtpoms(header_name,'Is_Symptomatic')
 #################################################################################################################################################
         elif (header_name == 'Symptoms_Resolved'):

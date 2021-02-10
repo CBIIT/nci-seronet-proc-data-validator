@@ -108,7 +108,7 @@ class Submitted_file:
         has_neg_data = test_column[(self.neg_list_logic & has_logic).tolist()]
         missing_data = test_column[missing_logic]
         missing_pos_data = test_column[(self.pos_list_logic & missing_logic).tolist()]
-        missing_neg_data = test_column[(self.neg_list_logic & missing_logic).tolist()]     
+        missing_neg_data = test_column[(self.neg_list_logic & missing_logic).tolist()]
         return has_data,has_pos_data,has_neg_data,missing_data,missing_pos_data,missing_neg_data
 ##########################################################################################################################
     def get_pos_neg_logic(self,pos_list,neg_list):  #logical vector for SARS_CoV_2_PCR_Test_Result Positive or Negative Participants
@@ -181,6 +181,13 @@ class Submitted_file:
         else:
             self.write_error_msg(test_value,column_name,error_msg,row_number,error_stat)
 ##########################################################################################################################
+    def get_participant_againt_list(self,has_data,pattern,current_demo):
+        id_error_list = [i[5] for i in self.error_list_summary if (i[0] == "Error") and (i[4] == "Research_Participant_ID")]
+        matching_values = [i for i in enumerate(has_data) if (pattern.match(i[1]) is not None) and (i[1] not in id_error_list)]
+        if (len(matching_values) > 0) and (len(current_demo) > 0):
+            error_msg = "Id is not found in database or in submitted demographic.csv file"
+            for i in enumerate(matching_values):
+                self.in_list(header_name,i[1][1],current_demo,error_msg,i[1][0],'Error')
     def pos_neg_errors(self,pos_list,neg_list,has_pos_data,has_neg_data,header_name):
         error_msg = "Participant is SARS_CoV2 Positive. Value must be: " + str(pos_list)
         for i in range(len(has_pos_data)):
@@ -188,7 +195,7 @@ class Submitted_file:
     
         error_msg = "Participant is SARS_CoV2 Negative. Value must be: " + str(neg_list)
         for i in range(len(has_neg_data)):
-            self.in_list(header_name,has_neg_data.values[i],neg_list,error_msg,has_neg_data.index[i],'Error') 
+            self.in_list(header_name,has_neg_data.values[i],neg_list,error_msg,has_neg_data.index[i],'Error')
     def current_infection_check(self,current_index,check_val,header_name):
         if "Yes" in check_val:
             error_msg = "Participant has " + current_index + " set to Yes. Duration must be a value of 0 or greater"
@@ -203,7 +210,7 @@ class Submitted_file:
                 self.in_list(header_name,test_value.values[i],["N/A"],error_msg,test_value.index[i],'Error')
     def get_duration_logic(self,test_string,list_values,error_message,error_stat):
         for i in range(len(test_string)):
-            prior_valid_object.in_list(header_name,test_string.values[i],list_values,error_msg,test_string.index[i],error_stat)
+            self.in_list(header_name,test_string.values[i],list_values,error_msg,test_string.index[i],error_stat)
     def biospeimen_type_wrong(self,bio_type,header_name):
         test_value = self.Data_Table[self.Data_Table['Biospecimen_Type'] != bio_type][header_name]
         for i in range(len(test_value)):
@@ -238,7 +245,7 @@ class Submitted_file:
             self.in_list(header_name,has_neg_data.values[i],neg_list,neg_error,has_neg_data.index[i],'Error')
 ##########################################################################################################################
     def particpant_no_symtpoms(self,header_name,test_string):
-        error_msg = "Participant does not have symptomns (" + test_string + " == 'No or N/A'), value must be N/A"        
+        error_msg = "Participant does not have symptomns (" + test_string + " == 'No or N/A'), value must be N/A"
         test_value  =self.Data_Table.iloc[[i[0] for i in enumerate(self.Data_Table[test_string]) if i[1] in ["No","N/A"]]][header_name]
         
         for i in range(len(test_value)):

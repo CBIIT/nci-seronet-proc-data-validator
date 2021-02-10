@@ -7,17 +7,12 @@ def Biospecimen_validator(Biospecimen_object,neg_list,pos_list,re,valid_cbc_ids,
         if (header_name.find('Automated_Count') > -1):
             Required_column = "No"
 #################################################################################################################################################
-        if 'Research_Participant_ID' in header_name:         
+        if 'Research_Participant_ID' in header_name:
             error_msg = "Value it not a Valid id format, Expecting XX_XXXXXX"
             pattern = re.compile('^[0-9]{2}[_]{1}[0-9]{6}$')
             for i in range(len(has_data)):
                 Biospecimen_object.valid_ID(header_name,has_data.values[i],pattern,valid_cbc_ids,error_msg,has_data.index[i],'Error')
-            id_error_list = [i[5] for i in Biospecimen_object.error_list_summary if (i[0] == "Error") and (i[4] == "Research_Participant_ID")]
-            matching_values = [i for i in enumerate(has_data) if (pattern.match(i[1]) is not None) and (i[1] not in id_error_list)]
-            if (len(matching_values) > 0) and (len(current_demo) > 0):
-                error_msg = "Id is not found in database or in submitted demographic.csv file"
-            for i in enumerate(matching_values):
-                Biospecimen_object.in_list(header_name,i[1][1],current_demo,error_msg,i[1][0],'Error')
+            Biospecimen_object.get_participant_againt_list(has_data,pattern,current_demo) 
 #################################################################################################################################################
         elif (header_name in ["Biospecimen_ID"]):
             error_msg = "Value it not a Valid id format, Expecting XX_XXXXXX_XXX"
@@ -42,7 +37,7 @@ def Biospecimen_validator(Biospecimen_object,neg_list,pos_list,re,valid_cbc_ids,
         elif ((header_name.find('Date_of') > -1) or (header_name.find('Expiration_Date') > -1) or (header_name.find('Time_of') > -1)):
             if (header_name.find('Time_of') > -1):
                 error_msg = "Value must be a valid time in 24hour format HH:MM"
-            else: 
+            else:
                 error_msg = "Value must be a valid Date MM/DD/YYYY"
             for i in range(len(has_data)):
                 Biospecimen_object.is_date_time(header_name,has_data.values[i],False,error_msg,has_data.index[i],'Error')

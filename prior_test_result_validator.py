@@ -10,12 +10,7 @@ def prior_test_result_validator(prior_valid_object,neg_list,pos_list,re,valid_cb
             pattern = re.compile('^[0-9]{2}[_]{1}[0-9]{6}$')
             for i in range(len(has_data)):
                 prior_valid_object.valid_ID(header_name,has_data.values[i],pattern,valid_cbc_ids,error_msg,has_data.index[i],'Error')
-            id_error_list = [i[5] for i in prior_valid_object.error_list_summary if (i[0] == "Error") and (i[4] == "Research_Participant_ID")]
-            matching_values = [i for i in enumerate(has_data) if (pattern.match(i[1]) is not None) and (i[1] not in id_error_list)]
-            if (len(matching_values) > 0) and (len(current_demo) > 0):
-                error_msg = "Id is not found in database or in submitted demographic.csv file"
-                for i in enumerate(matching_values):
-                    prior_valid_object.in_list(header_name,i[1][1],current_demo,error_msg,i[1][0],'Error')
+            prior_valid_object.get_participant_againt_list(has_data,pattern,current_demo)            
 #################################################################################################################################################
         elif 'SARS_CoV_2_PCR_Test_Result_Provenance' in header_name:
             test_string = ['From Medical Record','Self-Reported']
@@ -32,7 +27,7 @@ def prior_test_result_validator(prior_valid_object,neg_list,pos_list,re,valid_cb
         elif 'Date_of_SARS_CoV_2_PCR_sample_collection' in header_name:
             error_msg = "Value must be a valid date MM/DD/YYYY"
             for i in range(len(has_data)):
-                prior_valid_object.is_date_time(header_name,has_data.values[i],False,error_msg,has_data.index[i],'Error') 
+                prior_valid_object.is_date_time(header_name,has_data.values[i],False,error_msg,has_data.index[i],'Error')
 #################################################################################################################################################
         elif 'Date_of' in header_name:                    #checks if column variables are in date format
             Required_column = "Yes: SARS-Negative"
@@ -91,7 +86,7 @@ def prior_test_result_validator(prior_valid_object,neg_list,pos_list,re,valid_cb
             Required_column = "Yes: SARS-Negative"
             pos_list = ['Positive','Negative','Equivocal','Not Performed','N/A']
             neg_list = ['Positive','Negative','Equivocal','Not Performed']
-            prior_valid_object.pos_neg_errors(pos_list,neg_list,has_pos_data,has_neg_data,header_name) 
+            prior_valid_object.pos_neg_errors(pos_list,neg_list,has_pos_data,has_neg_data,header_name)
 #################################################################################################################################################
         prior_valid_object.missing_data_errors(Required_column,header_name,missing_data,missing_pos_data,missing_neg_data)
     return prior_valid_object
