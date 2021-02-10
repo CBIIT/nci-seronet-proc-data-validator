@@ -25,6 +25,7 @@ def lambda_handler(event, context):
     s3_resource = boto3.resource("s3")
     ssm = boto3.client("ssm")
     sns = boto3.client("sns")
+    
     host_client = ssm.get_parameter(Name="db_host", WithDecryption=True).get("Parameter").get("Value")
     user_name = ssm.get_parameter(Name="lambda_db_username", WithDecryption=True).get("Parameter").get("Value")
     user_password =ssm.get_parameter(Name="lambda_db_password", WithDecryption=True).get("Parameter").get("Value")
@@ -64,8 +65,8 @@ def lambda_handler(event, context):
                           "consumable.csv":['Biospecimen_ID','Consumable_Name']}
 #############################################################################################################
         Validation_Type = DB_MODE
-        if 'TestMode' in event:
-            if event['TestMode']=="On":         #if testMode is off treats as DB mode with manual trigger
+        if 'TEST_MODE' in event:
+            if event['TEST_MODE']=="On":         #if testMode is off treats as DB mode with manual trigger
                 Validation_Type = TEST_MODE
 #############################################################################################################
 ## Query the jobs table database and get list of zip files that passed File-Validation
@@ -77,8 +78,10 @@ def lambda_handler(event, context):
             MY_SQL = ("SELECT * FROM table_file_validator where submission_file_id = %s and file_validation_status = %s")
             files_to_check = pd.read_sql(MY_SQL, con=jobs_conn, params=[iterS,'FILE_VALIDATION_SUCCESS'])
             file_names = [pathlib.PurePath(i).name for i in files_to_check['file_validation_file_location']]
+            
             if 'submission.csv' not in file_names:          #code causes errors if this file does not exist
                 continue                                    #if submission was successful then it has to exist
+    
             submitting_center,part_count,bio_count = get_submission_metadata(s3_client,temp_file_loc,files_to_check,file_names,file_dbname,jobs_conn)
             all_file_objects = []
             for current_file in file_names:
@@ -110,36 +113,21 @@ def lambda_handler(event, context):
             if "demographic.csv" in file_names:
                 current_object = all_file_objects[file_names.index("demographic.csv")][1]
                 current_object.get_pos_neg_logic(pos_list,neg_list)
+                current_object.remove_unknown_sars_results_v2()
                 current_object = demographic_data_validator(current_object,neg_list,pos_list,re,submitting_center['CBC_ID'])
-                error_results = current_object.write_error_file("Demographic_Errors.csv",s3_resource,temp_file_loc,error_results,"Demographic_Errors")
+                error_results = current_object.write_error_file("Demographic_Errors.csv",s3_resource,temp_file_loc,error_results,"Demographic_Errors")           
             if "biospecimen.csv" in file_names:
                 current_object = all_file_objects[file_names.index("biospecimen.csv")][1]
                 current_object.get_pos_neg_logic(pos_list,neg_list)
+                current_object.remove_unknown_sars_results_v2()
                 current_object = Biospecimen_validator(current_object,neg_list,pos_list,re,submitting_center['CBC_ID'],current_particiant_ids)
                 error_results = current_object.write_error_file("Biospecimen_Errors.csv",s3_resource,temp_file_loc,error_results,"Biospecimen_Errors")
-            if "aliquot.csv" in file_names:
-                current_object = all_file_objects[file_names.index("aliquot.csv")][1]
-                current_object = other_files_validator(current_object,re,submitting_center['CBC_ID'],biospec_ids)
-                error_results = current_object.write_error_file("Aliquot_Errors.csv",s3_resource,temp_file_loc,error_results,"Aliquot_Errors")
-            if "equipment.csv" in file_names:
-                current_object = all_file_objects[file_names.index("equipment.csv")][1]
-                current_object = other_files_validator(current_object,re,submitting_center['CBC_ID'],biospec_ids)
-                error_results = current_object.write_error_file("Equipment_Errors.csv",s3_resource,temp_file_loc,error_results,"Equipment_Errors")
-            if "reagent.csv" in file_names:
-                current_object = all_file_objects[file_names.index("reagent.csv")][1]
-                current_object = other_files_validator(current_object,re,submitting_center['CBC_ID'],biospec_ids)
-                error_results = current_object.write_error_file("Reagent_Errors.csv",s3_resource,temp_file_loc,error_results,"Reagent_Errors")
-            if "consumable.csv" in file_names:
-                current_object = all_file_objects[file_names.index("consumable.csv")][1]
-                current_object = other_files_validator(current_object,re,submitting_center['CBC_ID'],biospec_ids)
-                error_results = current_object.write_error_file("Consumable_Errors.csv",s3_resource,temp_file_loc,error_results,"Consumable_Errors")
-
         if Validation_Type == TEST_MODE:
-            testing_data = {'submission_validation_file_location':['Testbuket/Test_CBC_Name/'],'orig_file_id':['Test_Mode']}
+            testing_data = {'submission_validation_file_location':['Testbuket/Test_CBC_Name/'],'orig_file_id':['TEST_MODE']}
             current_submission = pd.DataFrame(testing_data, columns = ['submission_validation_file_location', 'orig_file_id'])
         elif Validation_Type == DB_MODE:
             current_submission =  successful_submissions[successful_submissions_ids== iterS]
-        write_message_to_slack(http,error_results,current_submission,success,failure)
+        write_message_to_slack(http,error_results,current_submission,success,failure)   
 ##########################################################################################################################################
     except Exception as e:                          #if there are any errors, display and move to finally block
         print(e)
@@ -149,8 +137,8 @@ def lambda_handler(event, context):
         print("Connection to RDS mysql instance is now closed")
         close_connections(jobs_conn)
         close_connections(filedb_conn)
-    return{}
-#####################################################################################################################
+        return{}
+##########################################################################################################################################
 def display_error_line(ex):
     trace = []
     tb = ex.__traceback__
@@ -182,14 +170,12 @@ def get_bucket_and_key(files_to_check,file_names,current_file):
     current_metadata = files_to_check.loc[file_names.index(current_file)]
     full_bucket_name = current_metadata[current_metadata.index == 'file_validation_file_location'][0]
 
-    first_folder_cut = full_bucket_name.find('/')
+    first_folder_cut = full_bucket_name.find('/')            
     org_key_name = full_bucket_name[(first_folder_cut+1):]
     bucket_name = full_bucket_name[:(first_folder_cut)]
     return bucket_name,org_key_name
 def get_submission_metadata(s3_client,temp_file_loc,files_to_check,file_names,file_dbname,jobs_conn):
     bucket_name,org_key_name = get_bucket_and_key(files_to_check,file_names,"submission.csv")
-    print(bucket_name)
-    print(org_key_name)
 
     temp_file_loc = temp_file_loc + '/test_file'
     s3_client.download_file(bucket_name,org_key_name,temp_file_loc)
@@ -212,6 +198,7 @@ def write_message_to_slack(http,error_results,current_submission,slack_success,s
     file_name = pathlib.PurePath(submision_string).name
     org_file_id = current_submission['orig_file_id'].tolist()[0]
     
+    
     clean_files = [i[0] + ": " + str(i[1]) for i in error_results if i[1] == 0]
     error_files = [i[0] + ": " + str(i[1]) for i in error_results if i[1] >  0]
     #get the files that pass the validation
@@ -232,3 +219,4 @@ def write_message_to_slack(http,error_results,current_submission,slack_success,s
     message_slack=f"{file_name}(Job ID: {org_file_id} CBC ID: {file_submitted_by})\nValidation pass: (_{passString}_) \n *Validation fail:* (*{failString}*) File validated on {validation_date}"
     data={"type": "mrkdwn","text": message_slack}
     http.request("POST",slack_channel,body=json.dumps(data), headers={"Content-Type":"application/json"})
+##########################################################################################################################################
