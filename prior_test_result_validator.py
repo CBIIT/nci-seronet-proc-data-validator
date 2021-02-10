@@ -10,7 +10,7 @@ def prior_test_result_validator(prior_valid_object,neg_list,pos_list,re,valid_cb
             pattern = re.compile('^[0-9]{2}[_]{1}[0-9]{6}$')
             for i in range(len(has_data)):
                 prior_valid_object.valid_ID(header_name,has_data.values[i],pattern,valid_cbc_ids,error_msg,has_data.index[i],'Error')
-            prior_valid_object.get_participant_againt_list(has_data,pattern,current_demo)            
+            prior_valid_object.get_participant_againt_list(has_data,pattern,current_demo,header_name)
 #################################################################################################################################################
         elif 'SARS_CoV_2_PCR_Test_Result_Provenance' in header_name:
             test_string = ['From Medical Record','Self-Reported']
@@ -66,15 +66,15 @@ def prior_test_result_validator(prior_valid_object,neg_list,pos_list,re,valid_cb
         
             has_duration = [i for i in enumerate(duration_data) if str(i[1]).isdigit()]         #must be day/month/year
             error_msg = "Duration is a Number, value must be in ['Day','Month','Year']"
-            prior_valid_object.get_duration_logic(has_data,['Day','Month','Year'],error_msg,'Error')
+            prior_valid_object.get_duration_logic(header_name,has_duration,['Day','Month','Year'],error_msg,'Error')
             
             duration_NA = [i for i in enumerate(duration_data) if i[1] in ['N/A']]              #must be N/A
             error_msg = "Duration is N/A, value must be N/A"
-            prior_valid_object.get_duration_logic(has_data,['N/A'],error_msg,'Error')
+            prior_valid_object.get_duration_logic(header_name,duration_NA ,['N/A'],error_msg,'Error')
             
             duration_missing = [i for i in enumerate(duration_data) if not((i[1] in ['N/A']) or (str(i[1]).isdigit()))] #unknown
             error_msg = "Duration is Missing/Unknown, Unable to Validate Column"
-            prior_valid_object.get_duration_logic(has_data,[''],error_msg,'Warning')
+            prior_valid_object.get_duration_logic(header_name,duration_missing,[''],error_msg,'Warning')
 #################################################################################################################################################
         elif ('Current' in header_name) | ('HAART_Therapy' in header_name):
             Required_column = "Yes: SARS-Negative"

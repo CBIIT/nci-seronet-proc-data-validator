@@ -181,7 +181,7 @@ class Submitted_file:
         else:
             self.write_error_msg(test_value,column_name,error_msg,row_number,error_stat)
 ##########################################################################################################################
-    def get_participant_againt_list(self,has_data,pattern,current_demo):
+    def get_participant_againt_list(self,has_data,pattern,current_demo,header_name):
         id_error_list = [i[5] for i in self.error_list_summary if (i[0] == "Error") and (i[4] == "Research_Participant_ID")]
         matching_values = [i for i in enumerate(has_data) if (pattern.match(i[1]) is not None) and (i[1] not in id_error_list)]
         if (len(matching_values) > 0) and (len(current_demo) > 0):
@@ -208,9 +208,9 @@ class Submitted_file:
                 self.is_numeric(header_name,False,test_value.values[i],0,error_msg,test_value.index[i],'Error')
             else:
                 self.in_list(header_name,test_value.values[i],["N/A"],error_msg,test_value.index[i],'Error')
-    def get_duration_logic(self,test_string,list_values,error_message,error_stat):
-        for i in range(len(test_string)):
-            self.in_list(header_name,test_string.values[i],list_values,error_msg,test_string.index[i],error_stat)
+    def get_duration_logic(self,header_name,test_string,list_values,error_message,error_stat):
+        for i in test_string:
+            self.in_list(header_name,i[1],list_values,error_msg,i[0],error_stat)
     def biospeimen_type_wrong(self,bio_type,header_name):
         test_value = self.Data_Table[self.Data_Table['Biospecimen_Type'] != bio_type][header_name]
         for i in range(len(test_value)):
@@ -251,7 +251,7 @@ class Submitted_file:
         for i in range(len(test_value)):
             self.in_list(header_name,test_value.values[i],["N/A"],error_msg,test_value.index[i],'Error')
         error_msg = "Participant has unknown value for " + test_string + ", Unable to validate value"
-        test_value  =self.Data_Table.iloc[[i[0] for i in enumerate(self.Data_Table[test_string]) if i[1] not in ["Yes","No","N/A"]]][header_name]     
+        test_value  =self.Data_Table.iloc[[i[0] for i in enumerate(self.Data_Table[test_string]) if i[1] not in ["Yes","No","N/A"]]][header_name]
         
         for i in range(len(test_value)):
             self.write_error_msg(test_value.values[i],header_name,error_msg,test_value.index[i],'Error')

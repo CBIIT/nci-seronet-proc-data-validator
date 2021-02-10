@@ -12,7 +12,7 @@ def Biospecimen_validator(Biospecimen_object,neg_list,pos_list,re,valid_cbc_ids,
             pattern = re.compile('^[0-9]{2}[_]{1}[0-9]{6}$')
             for i in range(len(has_data)):
                 Biospecimen_object.valid_ID(header_name,has_data.values[i],pattern,valid_cbc_ids,error_msg,has_data.index[i],'Error')
-            Biospecimen_object.get_participant_againt_list(has_data,pattern,current_demo) 
+            Biospecimen_object.get_participant_againt_list(has_data,pattern,current_demo,header_name)
 #################################################################################################################################################
         elif (header_name in ["Biospecimen_ID"]):
             error_msg = "Value it not a Valid id format, Expecting XX_XXXXXX_XXX"
