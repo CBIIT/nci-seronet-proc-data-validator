@@ -91,25 +91,35 @@ class Submitted_file:
         return list_of_valid_ids
 ##########################################################################################################################
     def remove_unknown_sars_results_v2(self): #if a Participant has a SARS_Cov2_PCR test that is not positive or negative, write an error
-        unk_sars_result = self.Data_Table[~(self.neg_list_logic | self.pos_list_logic)]
+        unkn_list_logic = [not (x or y) for (x, y) in zip(self.pos_list_logic.tolist(), self.neg_list_logic.tolist())]     
+        unk_sars_result = self.Data_Table[unkn_list_logic]
+        
         for index in unk_sars_result.iterrows():
             self.error_list_summary.append(['Error',self.File_name,index[0]+2,unk_sars_result['Research_Participant_ID'][index[0]]," ",
                                             " ","Unknown Prior SARS_CoV-2 test, not valid Participant"])
-        self.Data_Table = self.Data_Table[(self.neg_list_logic | self.pos_list_logic)]          #Filter table
-        self.pos_list_logic = self.pos_list_logic[(self.neg_list_logic | self.pos_list_logic)]  #Update the positive logical vector
-        self.neg_list_logic = self.neg_list_logic[(self.neg_list_logic | self.pos_list_logic)]  #Update the negative logical vector
+        self.Data_Table = self.Data_Table[(self.neg_list_logic.tolist()) or (self.pos_list_logic.tolist())]          #Filter table
+        self.pos_list_logic = self.pos_list_logic[(self.neg_list_logic.tolist()) or (self.pos_list_logic.tolist())]  #Update the positive logical vector
+        self.neg_list_logic = self.neg_list_logic[(self.neg_list_logic.tolist()) or (self.pos_list_logic.tolist())]  #Update the negative logical vector
 ###############################################################################
     def check_data_type(self,test_column):     ## logical vectors to see if there is data or missing values
         missing_logic = [(len(str(i)) == 0)  for i in test_column]
         has_logic = [(len(str(i)) > 0)  for i in test_column]
+ 
+        has_data = test_column[has_logic]
+        has_pos_data = test_column[[(x and y) for (x, y) in zip(self.pos_list_logic.tolist(), has_logic)]]
+        has_neg_data = test_column[[(x and y) for (x, y) in zip(self.neg_list_logic.tolist(), has_logic)]]
+        missing_data = test_column[missing_logic]
+        missing_pos_data = test_column[[(x and y) for (x, y) in zip(self.pos_list_logic.tolist(), missing_logic)]]
+        missing_neg_data = test_column[[(x and y) for (x, y) in zip(self.neg_list_logic.tolist(), missing_logic)]]
+        return has_data,has_pos_data,has_neg_data,missing_data,missing_pos_data,missing_neg_data
+##########################################################################################################################
+    def check_data_type_v2(self,test_column):     ## logical vectors to see if there is data or missing values
+        missing_logic = [(len(str(i)) == 0)  for i in test_column]
+        has_logic = [(len(str(i)) > 0)  for i in test_column]
         
         has_data = test_column[has_logic]
-        has_pos_data = test_column[(self.pos_list_logic & has_logic).tolist()]
-        has_neg_data = test_column[(self.neg_list_logic & has_logic).tolist()]
         missing_data = test_column[missing_logic]
-        missing_pos_data = test_column[(self.pos_list_logic & missing_logic).tolist()]
-        missing_neg_data = test_column[(self.neg_list_logic & missing_logic).tolist()]
-        return has_data,has_pos_data,has_neg_data,missing_data,missing_pos_data,missing_neg_data
+        return has_data,missing_data
 ##########################################################################################################################
     def get_pos_neg_logic(self,pos_list,neg_list):  #logical vector for SARS_CoV_2_PCR_Test_Result Positive or Negative Participants
         self.pos_list_logic = self.Data_Table['Research_Participant_ID'].isin(pos_list['Research_Participant_ID']) #logic vector for positive Participants
@@ -155,7 +165,7 @@ class Submitted_file:
             self.write_error_msg(test_value,column_name,error_msg,row_number,error_stat)
 ##########################################################################################################################
     def is_date_time(self,column_name,test_value,na_allowed,error_msg,row_number,error_stat):           #writes an error if test_value is not a date or time, or N/A if allowed
-        if (na_allowed == True) & (test_value == 'N/A'):
+        if (na_allowed == True) and (test_value == 'N/A'):
             pass
         else:
             try:
@@ -164,9 +174,9 @@ class Submitted_file:
                 self.write_error_msg(test_value,column_name,error_msg,row_number,error_stat)
 ##########################################################################################################################
     def is_string(self,column_name,test_value,na_allowed,error_msg,row_number,error_stat):              #see if the value is a string (check for initals)
-        if (na_allowed == True) & ((test_value != test_value) | (test_value == "N/A")):       #value is N/A
+        if (na_allowed == True) and ((test_value != test_value) or (test_value == "N/A")):       #value is N/A
             pass
-        elif (na_allowed == False) & ((test_value != test_value) | (test_value == "N/A")):    #value is N/A
+        elif (na_allowed == False) and ((test_value != test_value) or (test_value == "N/A")):    #value is N/A
             self.write_error_msg(test_value,column_name,error_msg,row_number,error_stat)
         else:
             logic_check = string_logic_check(test_value)
@@ -202,14 +212,19 @@ class Submitted_file:
         else:
             error_msg = "Participant has " + current_index + " set to ['No','Unknown','N/A']. Duration must be N/A"
         
-        test_value = self.Data_Table.iloc[[i[0] for i in enumerate(self.Data_Table[current_index]) if i[1] in check_val]][header_name]
+        try:
+            test_value = self.Data_Table.iloc[[i[0] for i in enumerate(self.Data_Table[current_index]) if i[1] in check_val]][header_name]
+        except Exception as e:
+            print(e)
         for i in range(len(test_value)):
             if "Yes" in check_val:
                 self.is_numeric(header_name,False,test_value.values[i],0,error_msg,test_value.index[i],'Error')
             else:
                 self.in_list(header_name,test_value.values[i],["N/A"],error_msg,test_value.index[i],'Error')
-    def get_duration_logic(self,header_name,test_string,list_values,error_message,error_stat):
-        for i in test_string:
+    def get_duration_logic(self,header_name,test_string,list_values,error_msg,error_stat):
+        test_index = [i[0] for i in test_string]
+        test_value = self.Data_Table.iloc[test_index][header_name]
+        for i in enumerate(test_value):
             self.in_list(header_name,i[1],list_values,error_msg,i[0],error_stat)
     def biospeimen_type_wrong(self,bio_type,header_name):
         test_value = self.Data_Table[self.Data_Table['Biospecimen_Type'] != bio_type][header_name]
@@ -235,6 +250,10 @@ class Submitted_file:
                 if percent_check != round(float(viabilty_count[iterI]),1):
                      error_msg = "Percentage of Live cell counts to total cell counts (" + str(percent_check) + ") needs to equal viability counts"
                      self.write_error_msg(viabilty_count[iterI],"Viability_Cells_" + Count,error_msg,iterI,'Error')
+    def has_pmbc_data(self,header_name,has_data):
+        has_pbmc_logic = [(x and y) for (x, y) in zip(self.Data_Table[header_name] == has_data, (self.Data_Table['Biospecimen_Type'] == "PBMC"))]
+        has_data_column = self.Data_Table[has_pbmc_logic][header_name]
+        return has_data_column
 ##########################################################################################################################
     def get_in_list_logic(self,header_name,pos_list,neg_list,has_pos_data,has_neg_data):
         pos_error = "Participant is SARS_CoV-2 Positive.  Value must be one of the following: " + str(pos_list)
@@ -284,6 +303,13 @@ class Submitted_file:
             self.check_required(missing_pos_data,missing_neg_data,header_name,"Error","Warning")
         elif Required_column == "Yes: SARS-Positive":
             self.check_required(missing_pos_data,missing_neg_data,header_name,"Warning","Error")
+        elif Required_column == "No":
+            for i in range(len(missing_data)):
+                self.is_required(header_name,missing_data.values[i],"All",missing_data.index[i],'Warning')
+    def missing_data_errors_v2(self,Required_column,header_name,missing_data):
+        if Required_column == "Yes":
+            for i in range(len(missing_data)):
+                self.is_required(header_name,missing_data.values[i],"All",missing_data.index[i],'Error')
         elif Required_column == "No":
             for i in range(len(missing_data)):
                 self.is_required(header_name,missing_data.values[i],"All",missing_data.index[i],'Warning')

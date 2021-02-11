@@ -1,5 +1,6 @@
 def Biospecimen_validator(Biospecimen_object,neg_list,pos_list,re,valid_cbc_ids,current_demo):
     Biospecimen_object.get_pos_neg_logic(pos_list,neg_list)
+    Biospecimen_object.remove_unknown_sars_results_v2()
     for header_name in Biospecimen_object.Column_Header_List:
         test_column = Biospecimen_object.Data_Table[header_name]
         has_data,has_pos_data,has_neg_data,missing_data,missing_pos_data,missing_neg_data = Biospecimen_object.check_data_type(test_column)

@@ -45,23 +45,10 @@ def prior_test_result_validator(prior_valid_object,neg_list,pos_list,re,valid_cb
             error_msg = "Participant is SARS CoV-2 negative, Value must be one of the following: " + str(test_string)
             for i in range(len(has_neg_data)):
                 prior_valid_object.in_list(header_name,has_neg_data.values[i],test_string,error_msg,has_neg_data.index[i],'Error')
-#################################################################################################################################################
-        elif 'Duration' in header_name:                #Is value a number OR is value == N/A
-            Required_column = "No"
-            if (header_name.find('HAART_Therapy') > -1):
-                current_index = 'On_HAART_Therapy'
-            else:
-                current_index = header_name.replace('Duration_of','Current')
-            prior_valid_object.current_infection_check(current_index,["Yes"],header_name)                          #has current infection, must be number
-            prior_valid_object.current_infection_check(current_index,['No','Unknown','N/A'],header_name)           #does not have infection, must be N/A
-            error_msg = "Unknown value for " + current_index + " for current Participant.  Unable to Validate Duration"
-            has_data = prior_valid_object.Data_Table.iloc[[i[0] for i in enumerate(prior_valid_object.Data_Table[current_index]) if i[1] not in ['Yes','No','Unknown','N/A']]][header_name]
-            for i in range(len(has_data)):
-                prior_valid_object.write_error_msg(has_data.values[i],header_name,error_msg,has_data.index[i],'Error')
 ################################################################################################################################################
-        elif 'infection_unit' in header_name:
+        elif ('infection_unit' in header_name) or ('HAART_Therapy_unit' in header_name):
             Required_column = "No"
-            duration_index = header_name.replace('unit','')
+            duration_index = header_name.replace('_unit','')
             duration_data = prior_valid_object.Data_Table[duration_index]
         
             has_duration = [i for i in enumerate(duration_data) if str(i[1]).isdigit()]         #must be day/month/year
@@ -76,13 +63,26 @@ def prior_test_result_validator(prior_valid_object,neg_list,pos_list,re,valid_cb
             error_msg = "Duration is Missing/Unknown, Unable to Validate Column"
             prior_valid_object.get_duration_logic(header_name,duration_missing,[''],error_msg,'Warning')
 #################################################################################################################################################
-        elif ('Current' in header_name) | ('HAART_Therapy' in header_name):
+        elif 'Duration' in header_name:                #Is value a number OR is value == N/A
+            Required_column = "No"
+            if (header_name.find('HAART_Therapy') > -1):
+                current_index = 'On_HAART_Therapy'
+            else:
+                current_index = header_name.replace('Duration_of','Current')
+            prior_valid_object.current_infection_check(current_index,["Yes"],header_name)                          #has current infection, must be number
+            prior_valid_object.current_infection_check(current_index,['No','Unknown','N/A'],header_name)           #does not have infection, must be N/A
+            error_msg = "Unknown value for " + current_index + " for current Participant.  Unable to Validate Duration"
+            has_data = prior_valid_object.Data_Table.iloc[[i[0] for i in enumerate(prior_valid_object.Data_Table[current_index]) if i[1] not in ['Yes','No','Unknown','N/A']]][header_name]
+            for i in range(len(has_data)):
+                prior_valid_object.write_error_msg(has_data.values[i],header_name,error_msg,has_data.index[i],'Error')
+#################################################################################################################################################
+        elif ('Current' in header_name) or ('HAART_Therapy' in header_name):
             Required_column = "Yes: SARS-Negative"
             pos_list = ['Yes','No','Unknown','N/A']
             neg_list = ['Yes','No','Unknown']
             prior_valid_object.pos_neg_errors(pos_list,neg_list,has_pos_data,has_neg_data,header_name)
 #################################################################################################################################################
-        elif ('Test_Result' in header_name) | ('Seasonal_Coronavirus' in header_name):
+        elif ('Test_Result' in header_name) or ('Seasonal_Coronavirus' in header_name):
             Required_column = "Yes: SARS-Negative"
             pos_list = ['Positive','Negative','Equivocal','Not Performed','N/A']
             neg_list = ['Positive','Negative','Equivocal','Not Performed']

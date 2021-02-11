@@ -1,5 +1,6 @@
 def demographic_data_validator(demo_data_object,neg_list,pos_list,re,valid_cbc_ids):
     demo_data_object.get_pos_neg_logic(pos_list,neg_list)
+    demo_data_object.remove_unknown_sars_results_v2()
     for header_name in demo_data_object.Column_Header_List:
         test_column = demo_data_object.Data_Table[header_name]
         has_data,has_pos_data,has_neg_data,missing_data,missing_pos_data,missing_neg_data = demo_data_object.check_data_type(test_column)
