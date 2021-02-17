@@ -1,4 +1,4 @@
-def prior_test_result_validator(current_object,demo_ids,re,valid_cbc_ids,pd):
+def prior_test_result_validator(current_object,demo_ids,re,pd,valid_cbc_ids):
     current_object.Data_Table = current_object.Data_Table.merge(demo_ids.drop_duplicates("Research_Participant_ID"),how='left',on="Research_Participant_ID")
     current_object.All_Error_DF = pd.DataFrame(columns=current_object.error_list_summary)
     for header_name in current_object.Column_Header_List:
@@ -6,8 +6,8 @@ def prior_test_result_validator(current_object,demo_ids,re,valid_cbc_ids,pd):
 #################################################################################################################################################
         if 'Research_Participant_ID' in header_name:
             pattern_str = '[_]{1}[0-9]{6}$'
-            current_object.check_id_field(pd,re,"Research_Participant_ID",pattern_str,valid_cbc_ids,"XX_XXXXXX")
-            current_object.check_id_cross_sheet(pd,header_name,"SARS_CoV_2_PCR_Test_Result","prior_clinical_test","demographic")
+            current_object.check_id_field(pd,re,header_name,pattern_str,valid_cbc_ids,"XX_XXXXXX",False)
+            current_object.check_id_cross_sheet(pd,header_name,"Age","prior_clinical_test","demographic")
 #################################################################################################################################################
         elif 'SARS_CoV_2_PCR_Test_Result_Provenance' in header_name:
             list_values = ['From Medical Record','Self-Reported']
@@ -25,12 +25,12 @@ def prior_test_result_validator(current_object,demo_ids,re,valid_cbc_ids,pd):
 #################################################################################################################################################
         elif 'Date_of' in header_name:                    #checks if column variables are in date format
             Error_Message = "Value must be a valid date MM/DD/YYYY"
-            if 'Date_of_SARS_CoV_2_PCR_sample_collection' in header_name:  
+            if 'Date_of_SARS_CoV_2_PCR_sample_collection' in header_name:
                 Required_column = "Yes"
-                current_object.check_date(pd,header_name,False,Error_Message)
+                current_object.check_date(pd,current_object.Data_Table,header_name,False,Error_Message)
             else:
                 Required_column = "No"
-                current_object.check_date(pd,header_name,True,Error_Message)
+                current_object.check_date(pd,current_object.Data_Table,header_name,True,Error_Message)
 #################################################################################################################################################
         elif ('infection_unit' in header_name) or ('HAART_Therapy_unit' in header_name):
             Required_column = "No"
