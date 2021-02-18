@@ -29,7 +29,7 @@ def lambda_handler(event, context):
     user_password =ssm.get_parameter(Name="lambda_db_password", WithDecryption=True).get("Parameter").get("Value")
     jobs_dbname = ssm.get_parameter(Name="jobs_db_name", WithDecryption=True).get("Parameter").get("Value")
     file_dbname = "seronetdb-Validated"
-#############################################################################################################  
+#############################################################################################################
 # set up success and failure slack channel
     failure = ssm.get_parameter(Name="failure_hook_url", WithDecryption=True).get("Parameter").get("Value")
     success = ssm.get_parameter(Name="success_hook_url", WithDecryption=True).get("Parameter").get("Value")
@@ -68,11 +68,11 @@ def lambda_handler(event, context):
 #############################################################################################################
 ## Query the jobs table database and get list of zip files that passed File-Validation
         successful_submissions,file_tuple = get_list_of_names_to_validate(pd,jobs_conn,filedb_conn,s3_client,temp_file_loc,Validation_Type,event)
-        for iterI in range(len(file_tuple)): 
-            curr_id = file_tuple[iterI][0]
-            files_to_check = file_tuple[iterI][1]
-            file_names = file_tuple[iterI][2]
-            submitting_center = file_tuple[iterI][3]
+        for iterI in enumerate(file_tuple):
+            curr_id = file_tuple[iterI[0]][0]
+            files_to_check = file_tuple[iterI[0]][1]
+            file_names = file_tuple[iterI[0]][2]
+            submitting_center = file_tuple[iterI[0]][3]
 ####################################################################################################################
             all_file_objects = []
             for current_file in file_names:
@@ -92,7 +92,6 @@ def lambda_handler(event, context):
                     biospec_ids = pd.DataFrame(current_object.Data_Table[["Biospecimen_ID","Biospecimen_Type"]])
 ##########################################################################################################################################
             error_results = []
-            cross_valid_error = [['Message_Type','CSV_Sheet_Name_1','CSV_Sheet_Name_1','ID_Value','Error_message']] 
             if "prior_clinical_test.csv" in file_names:
                 current_object = all_file_objects[file_names.index("prior_clinical_test.csv")][1]
                 current_object = prior_test_result_validator(current_object,demo_ids,re,pd,submitting_center['CBC_ID'][0])
@@ -100,7 +99,7 @@ def lambda_handler(event, context):
             if "demographic.csv" in file_names:
                 current_object = all_file_objects[file_names.index("demographic.csv")][1]
                 current_object = demographic_data_validator(current_object,prior_cov_test,re,pd,submitting_center['CBC_ID'][0])
-                error_results = current_object.write_error_file("Demographic_Errors.csv",s3_resource,temp_file_loc,error_results,"Demographic_Errors")           
+                error_results = current_object.write_error_file("Demographic_Errors.csv",s3_resource,temp_file_loc,error_results,"Demographic_Errors")
             if "biospecimen.csv" in file_names:
                 current_object = all_file_objects[file_names.index("biospecimen.csv")][1]
                 current_object = Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,submitting_center['CBC_ID'][0])
@@ -130,7 +129,7 @@ def lambda_handler(event, context):
             elif Validation_Type == DB_MODE:
                 current_submission = successful_submissions[successful_submissions['submission_file_id'] == curr_id]
 ####################################################################################################################################################################################################################################################################################
-#            write_message_to_slack(http,error_results,current_submission,success,failure)
+            write_message_to_slack(http,error_results,current_submission,success,failure)
 ##########################################################################################################################################
     except Exception as e:                          #if there are any errors, display and move to finally block
         print(e)
@@ -155,7 +154,8 @@ def connect_to_sql_database(file_dbname,host_client,user_name,user_password):
     try:
         conn = mysql.connector.connect(host = host_client, user=user_name, password=user_password, db=file_dbname, connect_timeout=5)
         print("SUCCESS: Connection to RDS mysql instance succeeded\n")
-    except:
+    except Exception as e:
+        print(e)
         status_message = "Connection Failed"
     return conn,status_message
 ##########################################################################################################################
@@ -174,7 +174,7 @@ def get_mysql_queries(conn,index):
         return bio_ids
 ##########################################################################################################################
 def close_connections(conn):
-    if type(conn) == mysql.connector.connection.MySQLConnection:
+    if isinstance(conn,mysql.connector.connection.MySQLConnection):
         conn.close()
 ##########################################################################################################################
 def get_list_of_names_to_validate(pd,jobs_conn,filedb_conn,s3_client,temp_file_loc,Validation_Type,event):
@@ -182,13 +182,13 @@ def get_list_of_names_to_validate(pd,jobs_conn,filedb_conn,s3_client,temp_file_l
     if Validation_Type == DB_MODE:
         MY_SQL = "SELECT * FROM table_submission_validator where  batch_validation_status = %s"
         successful_submissions = pd.read_sql(MY_SQL, con=jobs_conn, params=['Batch_Validation_SUCCESS'])
-        successful_submissions = successful_submissions[['submission_file_id','orig_file_id','submission_validation_file_location']] 
+        successful_submissions = successful_submissions[['submission_file_id','orig_file_id','submission_validation_file_location']]
         successful_submissions_ids = successful_submissions['submission_file_id']
         for iterS in successful_submissions_ids:
             MY_SQL = ("SELECT * FROM table_file_validator where submission_file_id = %s and file_validation_status = %s")
             files_to_check = pd.read_sql(MY_SQL, con=jobs_conn, params=[iterS,'FILE_VALIDATION_IN_PROGRESS'])
             file_names = [pathlib.PurePath(i).name for i in files_to_check['file_validation_file_location']]
-##########################################################################################################################################            
+##########################################################################################################################################           
             if 'submission.csv' not in file_names:
                 data = {'CBC_ID': ['00'],'CBC_Name': ['Unknown'], "Submitted_Participants":[0],"Submited_Biospecimens":[0]}
                 submitting_center = pd.DataFrame(data, columns = ['CBC_ID','CBC_Name',"Submitted_ Participants", "Submited_Biospecimens"])

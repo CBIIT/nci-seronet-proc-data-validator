@@ -14,7 +14,7 @@ def demographic_data_validator(current_object,prior_cov_test,re,pd,valid_cbc_ids
             Required_column = "Yes"
             Error_Message = "Value must be a number greater than 0"
             current_object.check_if_number(pd,current_object.Data_Table,header_name,1,1000,"All",False,Error_Message)
-#################################################################################################################################################     
+#################################################################################################################################################
         elif (header_name in ['Race','Ethnicity','Gender']):
             Required_column = "Yes"
             if (header_name == 'Race'):

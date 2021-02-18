@@ -3,7 +3,7 @@ def Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,valid_cbc
     current_object.Data_Table = current_object.Data_Table.merge(demo_ids.drop_duplicates("Research_Participant_ID"),how='left',on="Research_Participant_ID")
     current_object.All_Error_DF = pd.DataFrame(columns=current_object.error_list_summary)
     pbmc_data = current_object.Data_Table[current_object.Data_Table['Biospecimen_Type'] == "PBMC"]
-    serum_data = current_object.Data_Table[current_object.Data_Table['Biospecimen_Type'] == "Serum"] 
+    serum_data = current_object.Data_Table[current_object.Data_Table['Biospecimen_Type'] == "Serum"]
     for header_name in current_object.Column_Header_List:
         Required_column = "Yes"
         if (header_name.find('Automated_Count') > -1):
@@ -26,7 +26,7 @@ def Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,valid_cbc
             current_object.check_in_list(pd,header_name,[list_values])
 #################################################################################################################################################
         elif 'Time_of' in header_name:
-            Error_Message = "Value must be a valid time in 24hour format HH:MM" 
+            Error_Message = "Value must be a valid time in 24hour format HH:MM"
             current_object.check_date(pd,current_object.Data_Table,header_name,False,Error_Message)
 #################################################################################################################################################
         elif ('Date_of' in header_name) or ('Expiration_Date' in header_name):
@@ -34,7 +34,7 @@ def Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,valid_cbc
             current_object.check_date(pd,current_object.Data_Table,header_name,False,Error_Message)
 #################################################################################################################################################
         elif(header_name in ["Storage_Time_at_2_8"]):
-            error_msg = "Value must be a positive number or N/A"
+            Error_Message = "Value must be a positive number or N/A"
             current_object.check_if_number(pd,current_object.Data_Table,header_name,1,1000,"All",True,Error_Message)
 #################################################################################################################################################
         elif(header_name in ["Storage_Start_Time_at_2_8_Initials","Storage_End_Time_at_2_8_Initials"]):
@@ -49,7 +49,7 @@ def Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,valid_cbc
 #################################################################################################################################################
         elif(header_name in ["Final_Concentration_of_Biospecimen"]) or (header_name.find('Hemocytometer_Count') > -1) or (header_name.find('Automated_Count') > -1):
             Error_Message = "Biospecimen Type == PBMC, Value must be a positive number"
-            current_object.check_if_number(pd,pbmc_data,header_name,1,1e9,"All",True,Error_Message)            
+            current_object.check_if_number(pd,pbmc_data,header_name,1,1e9,"All",True,Error_Message)
 #################################################################################################################################################
         elif(header_name in ["Centrifugation_Time","RT_Serum_Clotting_Time"]):
             Error_Message = "Biospecimen Type == Serum, Value must be a positive number"

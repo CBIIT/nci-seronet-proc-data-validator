@@ -20,7 +20,7 @@ def check_total_count(x,live_count,total_count):        #returns values that fai
     return True
 ##########################################################################################################################
 def check_percent_count(x,live_count,total_count,viabilty_count):   #returns values that fail this conditional
-    if ((str(x[live_count][0]).replace('.','').isdigit() and str(x[total_count][0]).replace('.','').isdigit()) and 
+    if ((str(x[live_count][0]).replace('.','').isdigit() and str(x[total_count][0]).replace('.','').isdigit()) and
         str(x[viabilty_count][0]).replace('.','').isdigit()):
         percent_check = round((float(x[live_count]) / float(x[total_count]))*100,1)
         if percent_check == round(float(x[viabilty_count]),1):
@@ -77,7 +77,7 @@ class Submitted_file:
         missing_data = self.Data_Table[self.Data_Table[header_name].apply(lambda x : x == "")]
         if len(missing_data) > 0:
             missing_data = self.filter_data_table(missing_data,header_name,pd,"Missing")
-            if "SARS_CoV_2_PCR_Test_Result" in data_table.columns:
+            if "SARS_CoV_2_PCR_Test_Result" in self.Data_Table.columns:
                 pos_data = missing_data[missing_data['SARS_CoV_2_PCR_Test_Result'] == "Positive"]
                 neg_data = missing_data[missing_data['SARS_CoV_2_PCR_Test_Result'] == "Negative"]
                 ukn_data = missing_data[missing_data['SARS_CoV_2_PCR_Test_Result'].apply(lambda x: x not in ['Positive','Negative'])]
@@ -116,7 +116,8 @@ class Submitted_file:
         return data_table
 ##########################################################################################################################
     def sort_and_merge(self,data_table,pd):
-        data_table = data_table[self.All_Error_DF.columns]
+        curr_col_names = self.All_Error_DF.columns
+        data_table = data_table[curr_col_names]
         self.All_Error_DF = pd.concat([self.All_Error_DF,data_table])
 ##########################################################################################################################
     def check_id_field(self,pd,re,field_name,pattern_str,valid_cbc_ids,pattern_error,ignore_dups):
@@ -174,11 +175,11 @@ class Submitted_file:
                 joint_list = [i for i in list_values[0] if i in list_values[1]]
             else:
                 joint_list = [i for i in list_values[1] if i in list_values[0]]
-            pos_data_table = data_table[data_table.apply(lambda x: (x['SARS_CoV_2_PCR_Test_Result'] in ['Positive']) 
+            pos_data_table = data_table[data_table.apply(lambda x: (x['SARS_CoV_2_PCR_Test_Result'] in ['Positive'])
                                                          and (x["Column_Value"] not in list_values[0]),axis=1)]
             neg_data_table = data_table[data_table.apply(lambda x: (x['SARS_CoV_2_PCR_Test_Result'] in ['Negative'])
                                                          and (x["Column_Value"] not in list_values[1]),axis=1)]
-            ukn_data_table = data_table[data_table.apply(lambda x: (x['SARS_CoV_2_PCR_Test_Result'] not in ['Positive','Negative']) 
+            ukn_data_table = data_table[data_table.apply(lambda x: (x['SARS_CoV_2_PCR_Test_Result'] not in ['Positive','Negative'])
                                                          and (x["Column_Value"] not in joint_list),axis=1)]
             
             Error_Message = "Unexpected Value Found. Participant is SARS_CoV-2 Positive.  Value must be one of the following " + str(list_values[0])
@@ -234,7 +235,7 @@ class Submitted_file:
     def check_if_number(self,pd,data_table,header_name,lower_val,upper_val,prior_logic,na_flag,Error_Message):
         if prior_logic != "All":
             data_table = data_table[data_table['SARS_CoV_2_PCR_Test_Result'].apply(lambda x: x in [prior_logic])]
-        number_check = data_table[data_table[header_name].apply(in_val_range, args=(lower_val,upper_val,na_flag))]                                           
+        number_check = data_table[data_table[header_name].apply(in_val_range, args=(lower_val,upper_val,na_flag))]
         self.get_duration_errors(pd,number_check,header_name,Error_Message)
 ##########################################################################################################################
     def symptom_logic_check(self,pd,header_name,symptom_col,pos_msg,neg_msg,func_check):
@@ -267,7 +268,7 @@ class Submitted_file:
         is_a_na  = data_table[data_table.apply(lambda x: (x["Storage_Time_at_2_8"] in ["N/A"]) and (x[header_name] not in ["N/A"]), axis = 1)]
         self.get_duration_errors(pd,is_a_na,header_name,"Storage Time at 2_8 is N/A.  Value must be N/A")
         is_unkn = data_table[data_table["Storage_Time_at_2_8"].apply(lambda x: not(str(x).isdigit()) and (x not in ['N/A']))]
-        self.get_duration_errors(pd,is_unkn,header_name,"Storage Time at 2_8 is unknown/missing.  Unable to validate.  PLease check data")    
+        self.get_duration_errors(pd,is_unkn,header_name,"Storage Time at 2_8 is unknown/missing.  Unable to validate.  PLease check data")
         
         is_a_num = data_table[data_table["Storage_Time_at_2_8"].apply(lambda x: str(x).isdigit())]
         data_logic = is_a_num[header_name].apply(lambda x: pd.to_datetime([x, 'asd'], errors="coerce"))
@@ -296,7 +297,7 @@ class Submitted_file:
 ##########################################################################################################################
     def write_error_file(self,file_name,s3_resource,temp_path,error_list,error_file):
         try:
-            file_path = temp_path + "/" + file_name 
+            file_path = temp_path + "/" + file_name
             error_count = len(self.All_Error_DF[self.All_Error_DF['Message_Type'] == "Error"])
             warn_count = len(self.All_Error_DF[self.All_Error_DF['Message_Type'] == "Warning"])
             if self.file_size > 0:
@@ -315,8 +316,9 @@ class Submitted_file:
             s3_resource.meta.client.upload_file(file_path, self.File_Bucket, s3_file_path)
             current_errors = (error_file,(error_count+warn_count))
         except Exception as e:
+            print(e)
             print('An Error occurred while trying to write Error file')
             current_errors = (error_file,-1)
         finally:
             error_list.append(current_errors)
-            return error_list
+        return error_list

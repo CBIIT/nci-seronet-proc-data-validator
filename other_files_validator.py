@@ -1,7 +1,7 @@
 def other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,valid_cbc_ids):
-    current_object.Data_Table = current_object.Data_Table.merge(biospec_ids,how='left',on="Biospecimen_ID")   
+    current_object.Data_Table = current_object.Data_Table.merge(biospec_ids,how='left',on="Biospecimen_ID")
     current_object.All_Error_DF = pd.DataFrame(columns=current_object.error_list_summary)
-    
+
     if current_object.File_name in ["equipment.csv","reagent.csv","consumable.csv"]:
         warning_data = current_object.Data_Table[current_object.Data_Table['Biospecimen_Type'] != "PBMC"]
         if len(warning_data)> 0:
@@ -9,7 +9,7 @@ def other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,valid_
             Error_Message = "Data is only expected for Biospecimen Type == PBMC.  Check to ensure this type is correct"
             current_object.add_error_values(pd,warning_data,Error_Message,"Warning")
         current_object.Data_Table =  current_object.Data_Table[current_object.Data_Table['Biospecimen_Type'] == "PBMC"]
-#################################################################################################################################################    
+#################################################################################################################################################
     for header_name in current_object.Column_Header_List:
         Required_column = "Yes"
 #################################################################################################################################################
@@ -41,12 +41,12 @@ def other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,valid_
                 list_values =  (['DPBS', 'Ficoll-Hypaque','RPMI-1640','no L-Glutamine','Fetal Bovine Serum','200 mM L-Glutamine',
                                  '1M Hepes','Penicillin/Streptomycin','DMSO', 'Cell Culture Grade','Vital Stain Dye'])
             elif (header_name in ["Consumable_Name"]):
-                list_values = ["50 mL Polypropylene Tube", "15 mL Conical Tube" ,"Cryovial Label"] 
+                list_values = ["50 mL Polypropylene Tube", "15 mL Conical Tube" ,"Cryovial Label"]
             current_object.check_in_list(pd,header_name,[list_values])
 #################################################################################################################################################
         current_object.get_missing_values(pd,header_name,Required_column)
 #################################################################################################################################################
-    if current_object.File_name in ["aliquot.csv"]: 
+    if current_object.File_name in ["aliquot.csv"]:
         id_compare = current_object.Data_Table[current_object.Data_Table.apply(lambda x: x["Biospecimen_ID"] not in x["Aliquot_ID"],axis = 1)]
         Error_Message = "Biospecimen_ID is not a substring of Aliquot ID.  Data is not Valid, please check data"
         current_object.get_duration_errors(pd,id_compare,'Biospecimen_ID',Error_Message)
