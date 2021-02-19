@@ -63,6 +63,9 @@ def Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,valid_cbc
             Error_Message = "Value must be a number greater than 0"
             current_object.check_if_number(pd,current_object.Data_Table,header_name,1,1000,"All",False,Error_Message)
 #################################################################################################################################################
+        else:
+            print("Column_Name: " + header_name + " has no validation rules set")
+#################################################################################################################################################
         current_object.get_missing_values(pd,header_name,Required_column)
 #################################################################################################################################################
     current_object.biospecimen_count_check(pd,'Hemocytometer_Count',pbmc_data)

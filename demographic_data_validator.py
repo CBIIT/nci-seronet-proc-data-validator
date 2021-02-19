@@ -62,5 +62,8 @@ def demographic_data_validator(current_object,prior_cov_test,re,pd,valid_cbc_ids
             Required_column = "No"
             current_object.check_icd10(pd,header_name)
 #################################################################################################################################################
+        else:
+            print("Column_Name: " + header_name + " has no validation rules set")
+#################################################################################################################################################
         current_object.get_missing_values(pd,header_name,Required_column)
     return current_object

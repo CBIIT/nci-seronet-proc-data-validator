@@ -118,7 +118,7 @@ class Submitted_file:
     def sort_and_merge(self,data_table,pd):
         curr_col_names = self.All_Error_DF.columns
         data_table = data_table[curr_col_names]
-        self.All_Error_DF = pd.concat([self.All_Error_DF,data_table])
+        self.All_Error_DF.append(data_table)
 ##########################################################################################################################
     def check_id_field(self,pd,re,field_name,pattern_str,valid_cbc_ids,pattern_error,ignore_dups):
         data_table = self.filter_data_table(self.Data_Table,field_name,pd,"Has_Data")
@@ -276,7 +276,7 @@ class Submitted_file:
         if check_type == "Date":
             Error_Message = "Storage_Time_at_2_8 is a number, value must be a date MM/DD/YYY"
             self.get_duration_errors(pd,data_table,header_name,Error_Message)
-        elif check_type == "Initials":
+        else:
             Error_Message = "Storage_Time_at_2_8 is a number, value must be a string that is NOT N/A"
             self.check_if_str(pd,is_a_num,header_name,Error_Message)
 ##########################################################################################################################
@@ -298,6 +298,7 @@ class Submitted_file:
     def write_error_file(self,file_name,s3_resource,temp_path,error_list,error_file):
         try:
             file_path = temp_path + "/" + file_name
+            self.All_Error_DF.drop_duplicates(["Column_Name","Column_Value"],inplace = True)
             error_count = len(self.All_Error_DF[self.All_Error_DF['Message_Type'] == "Error"])
             warn_count = len(self.All_Error_DF[self.All_Error_DF['Message_Type'] == "Warning"])
             if self.file_size > 0:
@@ -314,11 +315,12 @@ class Submitted_file:
             self.All_Error_DF.to_csv(file_path, sep=',', header=True, index=False)
             s3_file_path = self.Error_dest_key + "/" + file_name
             s3_resource.meta.client.upload_file(file_path, self.File_Bucket, s3_file_path)
-            current_errors = (error_file,(error_count+warn_count))
+            current_errors = (error_file,(error_count+warn_count),self.File_name)
+            
         except Exception as e:
             print(e)
             print('An Error occurred while trying to write Error file')
-            current_errors = (error_file,-1)
+            current_errors = (error_file,-1,self.File_name)
         finally:
             error_list.append(current_errors)
         return error_list

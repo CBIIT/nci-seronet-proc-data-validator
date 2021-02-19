@@ -57,5 +57,8 @@ def prior_test_result_validator(current_object,demo_ids,re,pd,valid_cbc_ids):
             neg_list = ['Positive','Negative','Equivocal','Not Performed']
             current_object.check_in_list(pd,header_name,[pos_list,neg_list])
 #################################################################################################################################################
+        else:
+            print("Column_Name: " + header_name + " has no validation rules set")
+#################################################################################################################################################
         current_object.get_missing_values(pd,header_name,Required_column)
     return current_object

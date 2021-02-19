@@ -44,6 +44,9 @@ def other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,valid_
                 list_values = ["50 mL Polypropylene Tube", "15 mL Conical Tube" ,"Cryovial Label"]
             current_object.check_in_list(pd,header_name,[list_values])
 #################################################################################################################################################
+        else:
+            print("Column_Name: " + header_name + " has no validation rules set")
+#################################################################################################################################################
         current_object.get_missing_values(pd,header_name,Required_column)
 #################################################################################################################################################
     if current_object.File_name in ["aliquot.csv"]:
