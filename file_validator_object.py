@@ -118,7 +118,7 @@ class Submitted_file:
     def sort_and_merge(self,data_table,pd):
         curr_col_names = self.All_Error_DF.columns
         data_table = data_table[curr_col_names]
-        self.All_Error_DF.append(data_table)
+        self.All_Error_DF = self.All_Error_DF.append(data_table)
 ##########################################################################################################################
     def check_id_field(self,pd,re,field_name,pattern_str,valid_cbc_ids,pattern_error,ignore_dups):
         data_table = self.filter_data_table(self.Data_Table,field_name,pd,"Has_Data")
@@ -295,10 +295,26 @@ class Submitted_file:
         self.get_duration_errors(pd,total_check_data,"Total_Cells_" + Count,total_error_msg)
         self.get_duration_errors(pd,percent_check_data,"Viability_" + Count,percent_error_msg)
 ##########################################################################################################################
+    def get_column_error_counts(self,id_name):
+        errors_found = self.All_Error_DF["Column_Value"][self.All_Error_DF['Column_Name'] == id_name].tolist()
+        submit_ids = self.Data_Table[id_name].tolist()
+        passing_ids = [i for i in submit_ids if i not in errors_found]
+        return len(passing_ids)        
+##########################################################################################################################
+    def compare_submit_to_valid(self,pd,demo_pass,bio_pass):
+        error_list = []
+        if demo_pass != int(self.Data_Table.iloc[1][1]):
+            Error_Message = "Only " + str(demo_pass) + " Research Participant IDs are Valid, does not match Submitted ID Count"
+            error_list.append(["Error","Number of Research Participants",self.Data_Table.iloc[1][1],Error_Message])
+        if bio_pass != int(self.Data_Table.iloc[2][1]):
+            Error_Message = "Only " + str(bio_pass) + " Biospecimen IDs are Valid, does not match Submitted ID Count"
+            error_list.append(["Error","Number of Biospecimens",self.Data_Table.iloc[2][1],Error_Message])
+        self.All_Error_DF = pd.DataFrame(error_list, columns =['Message_Type','Column_Name', 'Column_Value','Error_Message'])
+##########################################################################################################################
     def write_error_file(self,file_name,s3_resource,temp_path,error_list,error_file):
         try:
             file_path = temp_path + "/" + file_name
-            self.All_Error_DF.drop_duplicates(["Column_Name","Column_Value"],inplace = True)
+            self.All_Error_DF.drop_duplicates(self.ID_column_name + ["Column_Name","Column_Value"],inplace = True)
             error_count = len(self.All_Error_DF[self.All_Error_DF['Message_Type'] == "Error"])
             warn_count = len(self.All_Error_DF[self.All_Error_DF['Message_Type'] == "Warning"])
             if self.file_size > 0:
@@ -311,7 +327,8 @@ class Submitted_file:
             else:
                 print('\n')
      
-            self.All_Error_DF.sort_values(['Column_Name'] + self.ID_column_name,inplace = True)
+            if file_name != "Submission_Errors.csv":
+                self.All_Error_DF.sort_values(['Column_Name'] + self.ID_column_name,inplace = True)
             self.All_Error_DF.to_csv(file_path, sep=',', header=True, index=False)
             s3_file_path = self.Error_dest_key + "/" + file_name
             s3_resource.meta.client.upload_file(file_path, self.File_Bucket, s3_file_path)

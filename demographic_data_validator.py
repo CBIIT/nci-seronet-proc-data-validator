@@ -8,7 +8,6 @@ def demographic_data_validator(current_object,prior_cov_test,re,pd,valid_cbc_ids
             Required_column = "Yes"
             pattern_str = '[_]{1}[0-9]{6}$'
             current_object.check_id_field(pd,re,header_name,pattern_str,valid_cbc_ids,"XX_XXXXXX",False)
-            current_object.check_id_cross_sheet(pd,header_name,"SARS_CoV_2_PCR_Test_Result","demographic","prior_clinical_test")
 #################################################################################################################################################
         elif (header_name == 'Age'):
             Required_column = "Yes"
@@ -66,4 +65,5 @@ def demographic_data_validator(current_object,prior_cov_test,re,pd,valid_cbc_ids
             print("Column_Name: " + header_name + " has no validation rules set")
 #################################################################################################################################################
         current_object.get_missing_values(pd,header_name,Required_column)
-    return current_object
+    valid_id_count = current_object.get_column_error_counts("Research_Participant_ID")
+    return current_object,valid_id_count

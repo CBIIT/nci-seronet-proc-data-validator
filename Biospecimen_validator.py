@@ -12,10 +12,9 @@ def Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,valid_cbc
         if 'Research_Participant_ID' in header_name:
             pattern_str = '[_]{1}[0-9]{6}$'
             current_object.check_id_field(pd,re,header_name,pattern_str,valid_cbc_ids,"XX_XXXXXX",True)
-            current_object.check_id_cross_sheet(pd,header_name,"Age","biospecimen","demographic")
 #################################################################################################################################################
         elif (header_name in ["Biospecimen_ID"]):
-            pattern_str = '[_]{1}[0-9]{6}[_]{1}[0-9]{3}$$'
+            pattern_str = '[_]{1}[0-9]{6}[_]{1}[0-9]{3}$'
             current_object.check_id_field(pd,re,header_name,pattern_str,valid_cbc_ids,"XX_XXXXXX_XXX",False)
 ################################################################################################################################################
         elif(header_name in ["Biospecimen_Group"]):
@@ -70,8 +69,8 @@ def Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,valid_cbc
 #################################################################################################################################################
     current_object.biospecimen_count_check(pd,'Hemocytometer_Count',pbmc_data)
     current_object.biospecimen_count_check(pd,'Automated_Count',pbmc_data)
-###############################################################################################################################
     id_compare = current_object.Data_Table[current_object.Data_Table.apply(lambda x: x["Research_Participant_ID"] not in x["Biospecimen_ID"],axis = 1)]
     Error_Message = "Research_Participant_ID is not a substring of Biospecimen ID.  Data is not Valid, please check data"
     current_object.get_duration_errors(pd,id_compare,'Research_Participant_ID',Error_Message)
-    return current_object
+    valid_id_count = current_object.get_column_error_counts("Biospecimen_ID")
+    return current_object,valid_id_count

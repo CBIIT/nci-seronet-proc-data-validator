@@ -19,16 +19,16 @@ DB_MODE = "DB_Mode"
 TEST_MODE = "Test_Mode"
 #####################################################################
 def lambda_handler(event, context):
-    temp_file_loc = '/tmp'
+    temp_file_loc = '/' + 'tmp'
     s3_client = boto3.client('s3')
     s3_resource = boto3.resource("s3")
     ssm = boto3.client("ssm")
-    
+
     host_client = ssm.get_parameter(Name="db_host", WithDecryption=True).get("Parameter").get("Value")
     user_name = ssm.get_parameter(Name="lambda_db_username", WithDecryption=True).get("Parameter").get("Value")
     user_password =ssm.get_parameter(Name="lambda_db_password", WithDecryption=True).get("Parameter").get("Value")
     jobs_dbname = ssm.get_parameter(Name="jobs_db_name", WithDecryption=True).get("Parameter").get("Value")
-    file_dbname = "seronetdb-Validated"
+    file_dbname = ssm.get_parameter(Name="Validated_DB", WithDecryption=True).get("Parameter").get("Value")
 #############################################################################################################
 # set up success and failure slack channel
     failure = ssm.get_parameter(Name="failure_hook_url", WithDecryption=True).get("Parameter").get("Value")
@@ -66,77 +66,101 @@ def lambda_handler(event, context):
             if event['TEST_MODE']=="On":         #if testMode is off treats as DB mode with manual trigger
                 Validation_Type = TEST_MODE
 #############################################################################################################
+#############################################################################################################
 ## Query the jobs table database and get list of zip files that passed File-Validation
         successful_submissions,file_tuple = get_list_of_names_to_validate(pd,jobs_conn,filedb_conn,s3_client,temp_file_loc,Validation_Type,event)
-        for iterI in enumerate(file_tuple):
+        for iterI in range(len(file_tuple)):
             try:
-                curr_id = file_tuple[iterI[0]][0]
-                files_to_check = file_tuple[iterI[0]][1]
-                file_names = file_tuple[iterI[0]][2]
-                submitting_center = file_tuple[iterI[0]][3]
+                curr_id = file_tuple[iterI][0]
+                files_to_check = file_tuple[iterI][1]
+                file_names = file_tuple[iterI][2]
+                submitting_center = file_tuple[iterI][3]
+                if len(file_names) == 0:        #no files are in submission, continue onto next record
+                    continue
                 
                 all_file_objects = []
                 for current_file in file_names:
-                    if current_file in ['submission.csv']:
-                        all_file_objects.append((current_file,[]))
+                    if current_file in ["prior_clinical_test.csv",'demographic.csv','biospecimen.csv']:
+                        current_object = get_all_file_objects(pd,s3_client,key_index_dict,current_file,files_to_check,file_names,'SARS_CoV_2_PCR_Test_Result')
                     else:
-                        if current_file in ["prior_clinical_test.csv",'demographic.csv','biospecimen.csv']:
-                            current_object = get_all_file_objects(pd,s3_client,key_index_dict,current_file,files_to_check,file_names,'SARS_CoV_2_PCR_Test_Result')
-                        else:
-                            current_object = get_all_file_objects(pd,s3_client,key_index_dict,current_file,files_to_check,file_names,[])
-                        all_file_objects.append((current_file,current_object))
+                        current_object = get_all_file_objects(pd,s3_client,key_index_dict,current_file,files_to_check,file_names,[])
+                    all_file_objects.append((current_file,current_object))
                     if current_file in ["prior_clinical_test.csv"]:
                         prior_cov_test = pd.DataFrame(current_object.Data_Table[["Research_Participant_ID","SARS_CoV_2_PCR_Test_Result"]])
                     if current_file in ['demographic.csv']:
                          demo_ids = pd.DataFrame(current_object.Data_Table[["Research_Participant_ID","Age"]])
                     if current_file in ['biospecimen.csv']:
-                        biospec_ids = pd.DataFrame(current_object.Data_Table[["Biospecimen_ID","Biospecimen_Type"]])
+                        biospec_ids = pd.DataFrame(current_object.Data_Table[["Research_Participant_ID","Biospecimen_ID","Biospecimen_Type"]])
 ##########################################################################################################################################
-                error_results = []
+                error_results = []                          #tuple list containing error counts for each file
+                all_submit_part_ids = []                    #list of all participant ids across the submitted files
+                all_submit_bio_ids = []                     #list of all biospecimen ids across the submitted files
+                demo_pass = -1                              #if demographic is not included in submission, flag passing as -1
+                bio_pass = -1                               #if biospecimen is not included in submission, flag passing as -1
+                submit_cbc  = submitting_center['CBC_ID'][0]
                 if "prior_clinical_test.csv" in file_names:
                     current_object = all_file_objects[file_names.index("prior_clinical_test.csv")][1]
-                    current_object = prior_test_result_validator(current_object,demo_ids,re,pd,submitting_center['CBC_ID'][0])
+                    current_object = prior_test_result_validator(current_object,demo_ids,re,pd,submit_cbc)
+                    all_submit_part_ids = all_submit_part_ids + current_object.Data_Table['Research_Participant_ID'].tolist()
                     error_results = current_object.write_error_file("Prior_Clinical_Test_Errors.csv",s3_resource,temp_file_loc,error_results,"Prior_Clinical_Test_Errors" )
                 if "demographic.csv" in file_names:
                     current_object = all_file_objects[file_names.index("demographic.csv")][1]
-                    current_object = demographic_data_validator(current_object,prior_cov_test,re,pd,submitting_center['CBC_ID'][0])
-                    error_results = current_object.write_error_file("Demographic_Errors.csv",s3_resource,temp_file_loc,error_results,"Demographic_Errors")
+                    current_object,demo_pass = demographic_data_validator(current_object,prior_cov_test,re,pd,submit_cbc)
+                    all_submit_part_ids = all_submit_part_ids + current_object.Data_Table['Research_Participant_ID'].tolist()
+                    error_results = current_object.write_error_file("Demographic_Errors.csv",s3_resource,temp_file_loc,error_results,"Demographic_Errors")           
                 if "biospecimen.csv" in file_names:
                     current_object = all_file_objects[file_names.index("biospecimen.csv")][1]
-                    current_object = Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,submitting_center['CBC_ID'][0])
+                    current_object,bio_pass = Biospecimen_validator(current_object,prior_cov_test,demo_ids,re,pd,submit_cbc)
+                    all_submit_part_ids = all_submit_part_ids + current_object.Data_Table['Research_Participant_ID'].tolist()
+                    all_submit_bio_ids = all_submit_bio_ids + current_object.Data_Table['Biospecimen_ID'].tolist()
                     error_results = current_object.write_error_file("Biospecimen_Errors.csv",s3_resource,temp_file_loc,error_results,"Biospecimen_Errors")
                 if "aliquot.csv" in file_names:
                     current_object = all_file_objects[file_names.index("aliquot.csv")][1]
-                    current_object = other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,submitting_center['CBC_ID'][0])
+                    current_object = other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,submit_cbc)
+                    all_submit_bio_ids = all_submit_bio_ids + current_object.Data_Table['Biospecimen_ID'].tolist()
                     error_results = current_object.write_error_file("Aliquot_Errors.csv",s3_resource,temp_file_loc,error_results,"Aliquot_Errors")
                 if "equipment.csv" in file_names:
                     current_object = all_file_objects[file_names.index("equipment.csv")][1]
-                    current_object = other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,submitting_center['CBC_ID'][0])
+                    current_object = other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,submit_cbc)
+                    all_submit_bio_ids = all_submit_bio_ids + current_object.Data_Table['Biospecimen_ID'].tolist()
                     error_results = current_object.write_error_file("Equipment_Errors.csv",s3_resource,temp_file_loc,error_results,"Equipment_Errors")
                 if "reagent.csv" in file_names:
                     current_object = all_file_objects[file_names.index("reagent.csv")][1]
-                    current_object = other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,submitting_center['CBC_ID'][0])
+                    current_object = other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,submit_cbc)
+                    all_submit_bio_ids = all_submit_bio_ids + current_object.Data_Table['Biospecimen_ID'].tolist()
                     error_results = current_object.write_error_file("Reagent_Errors.csv",s3_resource,temp_file_loc,error_results,"Reagent_Errors")
                 if "consumable.csv" in file_names:
                     current_object = all_file_objects[file_names.index("consumable.csv")][1]
-                    current_object = other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,submitting_center['CBC_ID'][0])
+                    current_object = other_files_validator(current_object,prior_cov_test,biospec_ids,re,pd,submit_cbc)
+                    all_submit_bio_ids = all_submit_bio_ids + current_object.Data_Table['Biospecimen_ID'].tolist()
                     error_results = current_object.write_error_file("Consumable_Errors.csv",s3_resource,temp_file_loc,error_results,"Consumable_Errors")
+                if "submission.csv" in file_names:
+                    current_object = all_file_objects[file_names.index("submission.csv")][1]
+                    current_object.All_Error_DF = pd.DataFrame(columns=current_object.error_list_summary)
+                    current_object.compare_submit_to_valid(pd,demo_pass,bio_pass) 
+                    error_results = current_object.write_error_file("Submission_Errors.csv",s3_resource,temp_file_loc,error_results,"Submission_Errors")
+                
+                error_data = get_cross_sheet_Participant_ID(prior_cov_test,demo_ids,biospec_ids,submit_cbc,all_submit_part_ids)
+                error_results = write_cross_error_file(current_object,error_data,"Participant_Cross_Sheet_Errors.csv",s3_resource,temp_file_loc,error_results,"Participant")
+           
+                error_data = get_cross_sheet_Biospecimen_ID(filedb_conn,re,biospec_ids,all_file_objects,file_names,submit_cbc)
+                error_results = write_cross_error_file(current_object,error_data,"Biospecimen_Cross_Sheet_Errors.csv",s3_resource,temp_file_loc,error_results,"Biospecimen")
             except Exception as e:
                 print("An Error was found during validation Process")
                 display_error_line(e)
                 error_results = ("Error was found",-1)
 ##########################################################################################################################################
-            if Validation_Type == TEST_MODE:
-                successful_submissions['submission_file_id'] = -1
-                successful_submissions['orig_file_id'] = -1
-                successful_submissions['submission_validation_file_location'] = "Test_buket/Test_CBC_Name/date/file_name/Test_Mode_File"
-                current_submission = successful_submissions
+            if Validation_Type == TEST_MODE:          
+                current_submission = pd.DataFrame({'submission_file_id':[-1],'orig_file_id':[-1],
+                                'submission_validation_file_location':["Test_buket/Test_CBC_Name/date/file_name/Test_Mode_File"]})
             else:
                 current_submission = successful_submissions[successful_submissions['submission_file_id'] == curr_id]
 ##########################################################################################################################################
             try:
-                update_jobs_tables(files_to_check,error_results,jobs_conn)
-                write_message_to_slack(http,error_results,current_submission,success,failure)
+                if len(error_results) > 0:
+                    if Validation_Type == DB_MODE:
+                        update_jobs_tables(files_to_check,error_results,jobs_conn)
+                    write_message_to_slack(http,error_results,current_submission,success,failure)
             except Exception as job_error:
                 print("An Error occured while writting to the SQL database or Slack Channel")
                 display_error_line(job_error)
@@ -172,18 +196,21 @@ def get_mysql_queries(conn,index):
     if index == 1:  ## pulls positive and negative participant ids from database for validation purposes
         sql_querry = ("SELECT %s,%s FROM `Participant_Prior_Test_Result` Where Test_Name = %s;")
         prior_test = pd.read_sql(sql_querry, conn,params=["Research_Participant_ID","Test_Result","SARS_Cov_2_PCR"])
+        prior_test.rename(columns = {"Test_Result":"SARS_CoV_2_PCR_Test_Result"},inplace = True)
         return prior_test
     elif index == 2:
         sql_querry = "SELECT %s,%s FROM Participant;"
         bio_ids = pd.read_sql(sql_querry, conn, params=["Research_Participant_ID","Age"])
         return bio_ids
     elif index == 3:
-        sql_querry = "SELECT %s,%s FROM Biospecimen;"
-        bio_ids = pd.read_sql(sql_querry, conn, params=["Biospecimen_ID","Biospecimen_Type"])
+        sql_querry = "SELECT %s,%s,%s FROM Biospecimen;"
+        bio_ids = pd.read_sql(sql_querry, conn, params=["Research_Participant_ID","Biospecimen_ID","Biospecimen_Type"])
         return bio_ids
 ##########################################################################################################################
 def update_jobs_tables(full_file_paths,error_results,conn):
     sql_connect = conn.cursor(prepared=True)
+    error_results = [i for i in error_results if i[0] not in ["Participant_Cross_Sheet_Errors.csv","Biospecimen_Cross_Sheet_Errors.csv"]]
+    
     file_names = [pathlib.PurePath(i).name for i in full_file_paths['file_validation_file_location']]
     for iterR  in error_results:
         curr_path = full_file_paths["file_validation_file_location"][file_names.index(iterR[2])]
@@ -230,7 +257,6 @@ def get_all_file_objects(pd,s3_client,key_index_dict,current_file,files_to_check
         bucket_name,org_key_name = get_bucket_and_key(files_to_check,file_names,current_file)
         current_object.File_Bucket = bucket_name
         current_object.Error_dest_key = org_key_name.replace('UnZipped_Files/'+current_file,'Data_Validation_Results')
-
         current_object.load_csv_file(s3_client,bucket_name,org_key_name,pd,prior_field)
     except s3_client.exceptions.NoSuchKey:
         current_object = []
@@ -289,12 +315,131 @@ def get_list_of_names_to_validate(pd,jobs_conn,filedb_conn,s3_client,temp_file_l
         print("testMode is enabled")
         successful_submissions = pd.DataFrame(columns = ['submission_file_id','orig_file_id','submission_validation_file_location'])
         for i in range(1,len(event)):
-            files_to_check = event[list(event)[i]]['S3']
-            file_names = [pathlib.PurePath(i).name for i in files_to_check]
+            files_to_check = pd.DataFrame(event[list(event)[i]]['S3'],columns=['file_validation_file_location'])
+            file_names = [pathlib.PurePath(i).name for i in files_to_check['file_validation_file_location']]
             CBC_ID = event[list(event)[i]]['CBC_ID']
             Part_Count = event[list(event)[i]]['Submitted_Participants']
             Bio_Count  = event[list(event)[i]]['Submited_Biospecimens']
             data = {'CBC_ID': [CBC_ID],'CBC_Name': ['Test_MODE_CBC'], "Submitted_Participants":[Part_Count],"Submited_Biospecimens":[Bio_Count]}
             submitting_center = pd.DataFrame(data, columns = ['CBC_ID','CBC_Name',"Submitted_ Participants", "Submited_Biospecimens"])
-            result_tuple.append((iterS,files_to_check,file_names,submitting_center))
+            result_tuple.append((i,files_to_check,file_names,submitting_center))
     return successful_submissions,result_tuple
+#####################################################################
+def update_file_lists(in_file,missing_file,filename):
+    missing_file.append(filename)
+    in_file.remove(filename)
+    return in_file,missing_file
+#####################################################################
+def get_cross_sheet_Participant_ID(prior_cov_test,demo_ids,biospec_ids,test_cbc,all_submit_ids):
+    merged_data = prior_cov_test.merge(demo_ids,how='outer',on="Research_Participant_ID")
+    merged_data = merged_data.merge(biospec_ids,how='outer',on="Research_Participant_ID")
+    merged_data = merged_data[merged_data.isna().any(axis=1)]
+    merged_data = merged_data[merged_data["Research_Participant_ID"].apply(lambda x : (re.compile('^' + test_cbc + '[_]{1}[0-9]{6}$').match(x) is not None))]
+    if len(merged_data) > 0:
+        merged_data = merged_data[merged_data["Research_Participant_ID"].apply(lambda x : x in all_submit_ids)]
+        
+        merged_data.drop(['Biospecimen_Type'],axis = 1,inplace = True)
+        merged_data = pd.concat([merged_data,pd.DataFrame([['', '']],index=merged_data.index,columns=['Error_Message', 'Message_Type'])], axis=1)
+        
+        for index, row in merged_data.iterrows():            
+            in_file = ["Prior_Clinical_Test Data","Demographic Data","Biospecimen Data"]
+            missing_file = []
+      
+            if (row['SARS_CoV_2_PCR_Test_Result'] != row['SARS_CoV_2_PCR_Test_Result']):
+                in_file,missing_file = update_file_lists(in_file,missing_file,"Prior_Clinical_Test Data")
+            if (row['Age'] != row['Age']):
+                in_file,missing_file = update_file_lists(in_file,missing_file,"Demographic Data")
+            if (row['Biospecimen_ID'] != row['Biospecimen_ID']):
+                in_file,missing_file = update_file_lists(in_file,missing_file,"Biospecimen Data")
+    
+            merged_data.at[index,"Error_Message"] = "ID was found in " + str(in_file) + ". However ID is missing from " + str(missing_file)
+            merged_data.at[index,"Message_Type"] = "Error"        
+    merged_data = merged_data.reindex(columns= ['Message_Type', "Research_Participant_ID","Error_Message"])
+    return merged_data
+##############################################################################
+def get_sql_values(pd,all_id_list,current_object,sql_querry,conn,id_name,biospec_ids):
+    id_table = pd.read_sql(sql_querry, conn, params=["Biospecimen_ID",id_name])
+    
+    if id_name == "Equipment_ID":
+        sql_querry = "SELECT %s,%s FROM Equipment"
+        equip_ids_2 = pd.read_sql(sql_querry, conn, params=["Equipment_ID","Equipment_Type"])
+        id_table = id_table.merge(equip_ids_2,how='outer',on="Equipment_ID")
+        id_table = pd.concat([id_table, current_object.Data_Table[["Biospecimen_ID","Equipment_ID","Equipment_Type"]]])    
+    else:
+        id_table = pd.concat([id_table, current_object.Data_Table[["Biospecimen_ID",id_name]]])
+    if len(all_id_list) == 0:
+        all_id_list = biospec_ids.merge(id_table,how='outer',on="Biospecimen_ID")
+    else:
+        all_id_list = all_id_list.merge(id_table,how='outer',on="Biospecimen_ID")
+    return all_id_list
+def get_cross_sheet_Biospecimen_ID(conn,re,biospec_ids,all_file_objects,file_names,test_cbc):
+    merged_data = []
+    if "aliquot.csv" in file_names:
+        current_object = all_file_objects[file_names.index("aliquot.csv")][1]
+        sql_querry = "SELECT %s,%s FROM Aliquot;"
+        merged_data = get_sql_values(pd,merged_data,current_object,sql_querry,conn,"Aliquot_ID",biospec_ids)
+    if "equipment.csv" in file_names:
+        current_object = all_file_objects[file_names.index("equipment.csv")][1]
+        sql_querry = "SELECT %s,%s FROM Biospecimen_Equipment"
+        merged_data = get_sql_values(pd, merged_data,current_object,sql_querry,conn,"Equipment_ID",biospec_ids)
+    if "reagent.csv" in file_names:
+        current_object = all_file_objects[file_names.index("reagent.csv")][1]
+        sql_querry = "SELECT %s,%s FROM Reagent_Biospecimen;"
+        merged_data = get_sql_values(pd, merged_data,current_object,sql_querry,conn,"Reagent_Name",biospec_ids)
+    if "consumable.csv" in file_names:
+        current_object = all_file_objects[file_names.index("consumable.csv")][1]
+        sql_querry = "SELECT %s,%s FROM Consumable_Biospecimen;"
+        merged_data = get_sql_values(pd, merged_data,current_object,sql_querry,conn,"Consumable_Name",biospec_ids)
+    
+    merged_data = merged_data.drop_duplicates("Biospecimen_ID")
+    merged_data = merged_data[merged_data.isna().any(axis=1)]
+    merged_data = merged_data[merged_data["Biospecimen_ID"].apply(lambda x : (re.compile('^' + test_cbc + '[_]{1}[0-9]{6}[_]{1}[0-9]{3}$').match(x) is not None))]
+    merged_data.drop(["Research_Participant_ID"],axis = 1,inplace = True)
+    merged_data = pd.concat([merged_data,pd.DataFrame([['', '']],index=merged_data.index,columns=['Error_Message', 'Message_Type'])], axis=1)
+    
+    if len(merged_data) > 0:
+        for index, row in merged_data.iterrows():         
+            in_file = ["Biospecimen Data","Aliquot Data","Equipment Data","Reagent Data","Consumable Data"];
+            missing_file = []
+      
+            if (row['Biospecimen_Type'] != row['Biospecimen_Type']):
+                in_file,missing_file = update_file_lists(in_file,missing_file,"Biospecimen Data")
+            if (row["Aliquot_ID"] !=  row["Aliquot_ID"]):
+                in_file,missing_file = update_file_lists(in_file,missing_file,"Aliquot Data")
+            if (row["Equipment_ID"] !=  row["Equipment_ID"]) and (row['Biospecimen_Type'] == "PBMC"):
+                in_file,missing_file = update_file_lists(in_file,missing_file,"Equipment Data")
+            if (row["Reagent_Name"] !=  row["Reagent_Name"]) and (row['Biospecimen_Type'] == "PBMC"):
+                in_file,missing_file = update_file_lists(in_file,missing_file,"Reagent Data")
+            if (row["Consumable_Name"] !=  row["Consumable_Name"]) and (row['Biospecimen_Type'] == "PBMC"):
+                in_file,missing_file = update_file_lists(in_file,missing_file,"Consumable Data")
+            
+            if len(missing_file) > 0:
+                merged_data.at[index,"Error_Message"] = "ID was found in " + str(in_file) + ". However ID is missing from " + str(missing_file) 
+                merged_data.at[index,"Message_Type"] = "Error"        
+    merged_data = merged_data.reindex(columns= ['Message_Type', "Biospecimen_ID","Error_Message"])
+    merged_data = merged_data[merged_data['Message_Type'] == "Error"]
+    return merged_data
+#####################################################################
+def write_cross_error_file(current_obj,error_data,file_name,s3_resource,temp_path,error_results,ID_type):
+    try:
+        file_path = temp_path + "/" + file_name
+        error_count = len(error_data)
+        if ID_type == "Participant":
+            print("Research Participant IDs were checked for sheetwise relational rules. " + str(error_count) + " errors were found")
+        elif ID_type == "Biospecimen":
+            print("Biospecimen IDs were checked for sheetwise relational rules. " + str(error_count) + " errors were found")
+        if error_count > 0:
+            print('A file has been created\n')
+        else:
+            print("\n")
+        error_data.to_csv(file_path, sep=',', header=True, index=False)
+        s3_file_path = current_obj.Error_dest_key + "/" + file_name
+        s3_resource.meta.client.upload_file(file_path, current_obj.File_Bucket, s3_file_path)
+        current_errors = (file_name,error_count,file_name)
+    except Exception as e:
+        current_errors = (file_name,-1,file_name)
+        print("Error occured during writting file")
+        print(e)
+    finally:
+        error_results.append(current_errors)
+        return error_results
