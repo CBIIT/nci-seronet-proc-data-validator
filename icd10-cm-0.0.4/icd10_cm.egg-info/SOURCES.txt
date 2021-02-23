@@ -1,0 +1,12 @@
+LICENSE
+MANIFEST.in
+README.md
+setup.py
+icd10/__init__.py
+icd10/__version__.py
+icd10/icd10.json.gz
+icd10_cm.egg-info/PKG-INFO
+icd10_cm.egg-info/SOURCES.txt
+icd10_cm.egg-info/dependency_links.txt
+icd10_cm.egg-info/not-zip-safe
+icd10_cm.egg-info/top_level.txt
