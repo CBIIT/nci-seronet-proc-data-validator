@@ -12,6 +12,9 @@ import re
 import File_Submission_Object
 from Validation_Rules import Validation_Rules
 #############################################################################################################  
+eastern = dateutil.tz.gettz('US/Eastern')                                   #converts time into Eastern time zone (def is UTC)
+validation_date = datetime.datetime.now(tz=eastern).strftime("%Y-%m-%d %H:%M:%S")
+#############################################################################################################  
 DB_MODE = "DB_Mode"
 TEST_MODE = "Test_Mode"
 ############################################################################################################# 
@@ -54,16 +57,17 @@ def lambda_handler(event, context):
         for iterS in valid_ids:
             curr_sub_table = submission_list[submission_list['orig_file_id'] == iterS]
             current_sub_object = File_Submission_Object.Submission_Object(pd,curr_sub_table)
-            print("## Stating the Data Validation Proccess for " + current_sub_object.File_Name + " ##\n")
+            print("\n## Starting the Data Validation Proccess for " + current_sub_object.File_Name + " ##\n")
             
-            current_sub_object.Column_error_count = pd.DataFrame(columns = ["Sheet_Name","Column_Name","Error_Message"])
-            current_sub_object.Curr_col_errors = pd.DataFrame(columns = ["Sheet_Name","Column_Name","Error_Message"])
+            current_sub_object.Column_error_count = pd.DataFrame(columns = ["Message_Type","CSV_Sheet_Name","Column_Name","Error_Message"])
+            current_sub_object.Curr_col_errors = pd.DataFrame(columns = ["Message_Type","CSV_Sheet_Name","Column_Name","Error_Message"])
             
             current_sub_object.sql_table_list = col_name_table
             current_sub_object.populate_data_tables(pd_s3,curr_sub_table,s3_client,filesdb_conn)
             col_error_val = check_submission_quality(current_sub_object,http,slack_failure)
             if col_error_val == -1:
                 print("Errors were found when validating column names.  Unable to Proceed with Validation")
+                current_sub_object.update_data_jobs_table(pd,jobs_conn,current_sub_object,"Column_Error",validation_date)
                 continue
 #########################################################################################################################################
             current_sub_object.populate_list_dict(pd,filesdb_conn,"prior_clinical_test.csv",'prior',["Research_Participant_ID","SARS_CoV_2_PCR_Test_Result"])
@@ -93,10 +97,13 @@ def lambda_handler(event, context):
             current_sub_object.check_for_dup_ids("demographic.csv",'Research_Participant_ID')
             current_sub_object.check_for_dup_ids("biospecimen.csv",'Biospecimen_ID')
             current_sub_object.get_cross_sheet_Participant_ID(re,all_part_ids,valid_cbc_ids,'Research_Participant_ID')
+            current_sub_object.get_passing_part_ids(["prior_clinical_test.csv","demographic.csv","biospecimen.csv"],'Research_Participant_ID')
+            current_sub_object.get_passing_part_ids(["biospecimen.csv","aliquot.csv","reagent.csv","equipment.csv","consumable.csv"],'Biospecimen_ID')
 ##########################################################################################################################################
             try:
-                write_message_to_slack(http,current_sub_object,slack_success,slack_failure)
+#                write_message_to_slack(http,current_sub_object,slack_success,slack_failure)
                 current_sub_object.write_error_file(pd_s3,s3_client)
+                current_sub_object.update_jobs_tables(pd,jobs_conn,current_sub_object,"File_Error",validation_date)
             except Exception as job_error:
                 print("An Error occured while writting to the SQL database or Slack Channel")
                 display_error_line(job_error)
@@ -151,9 +158,9 @@ def get_submission_metadata(s3_client,Data_Table,conn):
     return submitting_center
 ##########################################################################################################################################
 def get_list_of_valid_submissions(jobs_conn,filesdb_conn,s3_client,Validation_Type,event):
-    all_files_to_check = pd.DataFrame(columns=["orig_file_id","submission_file_id","submission_validation_file_location","file_validation_file_location"])
+    all_files_to_check = pd.DataFrame(columns=["orig_file_id","submission_file_id","unzipped_file_id","submission_validation_file_location","file_validation_file_location"])
     if Validation_Type == DB_MODE:
-        MY_SQL = ("SELECT sub.orig_file_id, sub.submission_file_id, sub.submission_validation_file_location, tbl.file_validation_file_location "
+        MY_SQL = ("SELECT sub.orig_file_id,sub.submission_file_id,tbl.unzipped_file_id, sub.submission_validation_file_location, tbl.file_validation_file_location "
                  "FROM table_submission_validator as sub JOIN table_file_validator as tbl "
                   "ON sub.submission_file_id = tbl.submission_file_id "  
                   "where batch_validation_status = %s and file_validation_status = %s;")
@@ -169,7 +176,7 @@ def check_submission_quality(current_sub_object,http,failure):
         error_count = len(current_sub_object.Column_error_count)
         error_message = "Errors were found in " + str(error_count) + " column names, unable to Validate Submission"
     if len(error_message) > 0:
-        write_slack_error(http,failure,error_message,current_sub_object)
+ #       write_slack_error(http,failure,error_message,current_sub_object)
         return -1
     return 0
 ##########################################################################################################################################
@@ -185,10 +192,7 @@ def convert_data_type(v):
             except ValueError:
                 return v
 ##########################################################################################################################################
-def write_slack_error(http,failure,error_message,current_submission):
-    eastern = dateutil.tz.gettz('US/Eastern')                                   #converts time into Eastern time zone (def is UTC)
-    validation_date = datetime.datetime.now(tz=eastern).strftime("%Y-%m-%d %H:%M:%S")
-    
+def write_slack_error(http,failure,error_message,current_submission):    
     submision_string = current_submission.Submission_Location_Path
     slash_index = [m.start() for m in re.finditer('/',submision_string)]
     file_submitted_by = submision_string[(slash_index[0]+1):(slash_index[1])]
@@ -250,4 +254,6 @@ def write_message_to_slack(http,current_submission,slack_success,slack_failure):
               
     data={"type": "mrkdwn","text": message_slack}
     http.request("POST",slack_channel,body=json.dumps(data), headers={"Content-Type":"application/json"})
+def update_file_jobs_table():
+    pass
 ##########################################################################################################################################
