@@ -3,7 +3,7 @@ import icd10
 ######################################################################################################################
 class Submission_Object:
     def __init__(self,pd,current_sub):                  #initalizes the Object
-        """An Object that contains information for each Submitted File that Passed File_Validation"""
+        """An Object that contains information for each Submitted File that Passed File_Validation."""
         first_index = current_sub.index[0]
         self.Orig_ID = current_sub['orig_file_id'][first_index]
         self.Unzipped_file_id = current_sub['unzipped_file_id']
@@ -98,6 +98,12 @@ class Submission_Object:
         all_part_ids = self.File_ids_dict['prior'].merge(self.File_ids_dict['demo_id'],how = "outer", on = "Research_Participant_ID")
         all_part_ids = all_part_ids.merge(self.File_ids_dict['bio_id'],how='outer',on="Research_Participant_ID")
         return all_part_ids
+    def get_all_bio_ids(self):       
+        all_bio_ids = self.File_ids_dict['bio_id'].merge(self.File_ids_dict['aliquot'],how = "outer", on = "Biospecimen_ID")
+        all_bio_ids = all_bio_ids.merge(self.File_ids_dict['equip'],how='outer',on="Biospecimen_ID")
+        all_bio_ids = all_bio_ids.merge(self.File_ids_dict['reagent'],how='outer',on="Biospecimen_ID")
+        all_bio_ids = all_bio_ids.merge(self.File_ids_dict['consume'],how='outer',on="Biospecimen_ID")
+        return all_bio_ids    
     def merge_tables(self,file_name,data_table):
         if file_name == "prior_clinical_test.csv":
             data_table = data_table.merge(self.File_ids_dict['demo_id'].drop_duplicates("Research_Participant_ID"),how='left',on="Research_Participant_ID")
@@ -150,6 +156,10 @@ class Submission_Object:
             for i in dup_id_count.index:
                 error_msg = "Id is repeated " + str(dup_id_count[field_name][i]) + " times, Multiple repeats are not allowed"
                 self.add_error_values("Error",sheet_name,-3,field_name,i,error_msg)
+    def check_if_substr(self,data_table,id_1,id_2,file_name,header_name):
+        id_compare = data_table[data_table.apply(lambda x: x[id_1] not in x[id_2],axis = 1)]
+        Error_Message = id_1 + " is not a substring of " + id_2 +".  Data is not Valid, please check data"
+        self.update_error_table("Error",id_compare,file_name,header_name,Error_Message)
 ##########################################################################################################################
     def check_in_list(self,pd,sheet_name,data_table,header_name,depend_col,depend_val,list_values):
         if depend_col == "None":            #rule has no dependancy on another column
@@ -293,6 +303,29 @@ class Submission_Object:
             self.add_error_values("Error","Cross_Participant_ID.csv",-10,field_name,check_id_only.iloc[iterZ][field_name],error_msg)
         self.sort_and_drop(field_name,True)
 ##########################################################################################################################
+    def write_cross_bio_errors(self,merged_data,table_name,sheet_name):
+        error_data = merged_data.query("Biospecimen_Type != Biospecimen_Type and {0} == {0}".format(table_name))
+        error_msg = "ID is found in " + sheet_name + ", however ID is missing from Biospecimen.csv"
+        self.update_error_table("Error",error_data,"Cross_Biospecimen_ID.csv","Biospecimen_ID",error_msg)          
+        if table_name in ["Aliquot_ID"]:
+            error_data = merged_data.query("Biospecimen_Type == Biospecimen_Type and {0} != {0}".format(table_name))
+            error_msg = "ID is found in Biospecimen.csv, however is missing from " + sheet_name
+            self.update_error_table("Error",error_data,"Cross_Biospecimen_ID.csv","Biospecimen_ID",error_msg) 
+        else:   
+            error_data = merged_data.query("Biospecimen_Type != 'PBMC' and Biospecimen_Type == Biospecimen_Type and {0} == {0}".format(table_name))
+            error_msg = "ID is found in " + sheet_name + ", and ID is found in Biospecimen.csv however has Biospecimen_Type NOT PBMC"
+            self.update_error_table("Error",error_data,"Cross_Biospecimen_ID.csv","Biospecimen_ID",error_msg)
+            error_data = merged_data.query("Biospecimen_Type == 'PBMC' and Biospecimen_Type == Biospecimen_Type and {0} != {0}".format(table_name))
+            error_msg = "ID is found in Biospecimen.csv and has Biospecimen_Type of PBMC, however ID is missing from " + sheet_name
+            self.update_error_table("Error",error_data,"Cross_Biospecimen_ID.csv","Biospecimen_ID",error_msg)
+    def get_cross_sheet_Biospecimen_ID(self,re,merged_data,valid_cbc,field_name):
+        merged_data = merged_data[merged_data.isna().any(axis=1)]
+        merged_data = merged_data[merged_data[field_name].apply(lambda x : (re.compile('^' + valid_cbc + '[_]{1}[0-9]{6}[_]{1}[0-9]{3}$').match(x) is not None))]
+        if len(merged_data) > 0:
+            self.write_cross_bio_errors(merged_data,"Aliquot_ID","Aliquot.csv")
+            self.write_cross_bio_errors(merged_data,"Equipment_ID","Equipment.csv")
+            self.write_cross_bio_errors(merged_data,"Reagent_Name","Reagent.csv")
+            self.write_cross_bio_errors(merged_data,"Consumable_Name","Consumable.csv")
     def get_cross_sheet_Participant_ID(self,re,merged_data,valid_cbc,field_name):
         merged_data = merged_data[merged_data.isna().any(axis=1)]
         merged_data = merged_data[merged_data[field_name].apply(lambda x : (re.compile('^' + valid_cbc + '[_]{1}[0-9]{6}$').match(x) is not None))]
@@ -340,6 +373,11 @@ class Submission_Object:
             pd_s3.put_df(s3_client,curr_table,self.Bucket_Name,curr_key,format = "csv")
             print(iterU +  " has " + str(len(curr_table)) + " Errors")
 ##########################################################################################################################
+    def get_submit_by(self,re):
+        submision_string = self.Submission_Location_Path
+        slash_index = [m.start() for m in re.finditer('/',submision_string)]
+        file_submitted_by = submision_string[(slash_index[0]+1):(slash_index[1])]
+        return file_submitted_by
     def update_jobs_tables(self,pd,jobs_conn,current_sub_object,error_string,validation_date):
         sql_connect = jobs_conn.cursor()
         sql_connect.execute("select current_user();")
@@ -388,16 +426,16 @@ class Submission_Object:
             tuple_list = (str(self.Orig_ID),curr_key,validation_date,str(self.Unzipped_file_id.iloc[iterZ]),"Unknown ARN",status_field[iterZ],batch_status[iterZ],curr_user)
 
             if len(rows) > 0:
-                cols = ", ".join([str(i) + " = %s " for i in column_list])
-                sql = "UPDATE `table_data_validator` set " + cols + " where unzipped_file_id = %s"
-                sql_connect.execute(sql, tuple_list + (str(self.Unzipped_file_id.iloc[iterZ]),))
+                cols = ", ".join([str(i[1]) + " = '" + tuple_list[i[0]] + "'" for i in enumerate(column_list)])
+                sql = f"UPDATE `table_data_validator` set {cols} where unzipped_file_id = %s"
+                sql_connect.execute(sql, (str(self.Unzipped_file_id.iloc[iterZ]),))
             else:
                 cols = "`,`".join([str(i) for i in column_list])
-                sql = "INSERT INTO `table_data_validator` (`" + cols + "`) VALUES (" + "%s,"*(len(column_list)-1) + "%s)"
+                sql = f"INSERT INTO `table_data_validator` (` {cols} `) VALUES (" + "%s,"*(len(column_list)-1) + "%s)"
                 sql_connect.execute(sql, tuple_list)
             
             sql = "UPDATE `table_file_validator` set file_validation_status = %s where unzipped_file_id = %s"
-            tuple_list = (str(self.Unzipped_file_id.iloc[iterZ]),status_field[iterZ])
+            tuple_list = (status_field[iterZ],str(self.Unzipped_file_id.iloc[iterZ]))
             sql_connect.execute(sql, tuple_list)
         jobs_conn.commit()
         sql_connect.close()
