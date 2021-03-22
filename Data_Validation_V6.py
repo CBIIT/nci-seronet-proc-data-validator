@@ -9,6 +9,8 @@ from dateutil.parser import parse
 import datetime
 import re
 
+import aws_creds
+from get_event import get_event 
 import File_Submission_Object
 from Validation_Rules import Validation_Rules
 #############################################################################################################  
@@ -17,9 +19,13 @@ TEST_MODE = "Test_Mode"
 eastern = dateutil.tz.gettz('US/Eastern')                                   #converts time into Eastern time zone (def is UTC)
 validation_date = datetime.datetime.now(tz=eastern).strftime("%Y-%m-%d %H:%M:%S")
 #############################################################################################################  
-def lambda_handler(event, context):
-    s3_client = boto3.client('s3')
-    ssm = boto3.client("ssm")
+def main_function():    
+    event = get_event()
+     
+    aws_access_id =  aws_creds.aws_access_id
+    aws_secret_key = aws_creds.aws_secret_key
+    s3_client = boto3.client('s3',aws_access_key_id = aws_access_id, aws_secret_access_key = aws_secret_key, region_name='us-east-1')
+    ssm = boto3.client("ssm",aws_access_key_id = aws_access_id, aws_secret_access_key = aws_secret_key, region_name='us-east-1')
 
     host_client = ssm.get_parameter(Name="db_host", WithDecryption=True).get("Parameter").get("Value")
     user_name = ssm.get_parameter(Name="lambda_db_username", WithDecryption=True).get("Parameter").get("Value")
@@ -103,7 +109,6 @@ def lambda_handler(event, context):
             current_sub_object.check_for_dup_ids("demographic.csv",'Research_Participant_ID')
             current_sub_object.check_for_dup_ids("biospecimen.csv",'Biospecimen_ID')
             current_sub_object.check_for_dup_ids("assay.csv",'Assay_ID')
-            
             
             current_sub_object.get_cross_sheet_Participant_ID(pd,re,all_part_ids,valid_cbc_ids,'Research_Participant_ID')
             current_sub_object.get_cross_sheet_Biospecimen_ID(pd,re,all_bio_ids,valid_cbc_ids,'Biospecimen_ID')
@@ -258,3 +263,4 @@ def write_message_to_slack(http,current_submission,slack_success,slack_failure):
     data={"type": "mrkdwn","text": message_slack}
     http.request("POST",slack_channel,body=json.dumps(data), headers={"Content-Type":"application/json"})
 ##########################################################################################################################################
+main_function()
