@@ -525,4 +525,3 @@ def check_multi_rule(pd,data_table,depend_col,depend_val):
         data_table = data_table[data_table[depend_col].apply(lambda x: x in depend_val)]
         error_str = depend_col + " is in " +  str(depend_val)
     return data_table,error_str
-
