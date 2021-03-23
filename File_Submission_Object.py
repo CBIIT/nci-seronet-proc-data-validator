@@ -21,6 +21,7 @@ class Submission_Object:
                               "assay.csv":["Assay_Metadata"],"assay_target.csv":["Assay_Target"],"biospecimen.csv":["Biospecimen","Collection_Tube"],
                               "prior_clinical_test.csv":["Prior_Test_Result"],"aliquot.csv":["Aliquot","Aliquot_Tube"],"equipment.csv":["Equipment"],
                               "confirmatory_clinical_test.csv":["Confirmatory_Test_Result"], "reagent.csv":["Reagent"],"consumable.csv":["Consumable"]}
+       
         self.Error_list = pd.DataFrame(columns = ["Message_Type","CSV_Sheet_Name","Row_Index","Column_Name","Column_Value","Error_Message"])
 ######################################################################################################################
     def get_file_info(self,pd_s3,current_file,s3_client):
@@ -98,14 +99,14 @@ class Submission_Object:
     def get_all_part_ids(self):       
         all_part_ids = self.File_ids_dict['prior'].merge(self.File_ids_dict['demo_id'],how = "outer", on = "Research_Participant_ID")
         all_part_ids = all_part_ids.merge(self.File_ids_dict['bio_id'],how='outer',on="Research_Participant_ID")
-        all_part_ids = all_part_ids.merge(self.File_ids_dict['confirm'],how='outer',on="Research_Participant_ID")        
+        all_part_ids = all_part_ids.merge(self.File_ids_dict['confirm'],how='outer',on="Research_Participant_ID")
         return all_part_ids
     def get_all_bio_ids(self):       
         all_bio_ids = self.File_ids_dict['bio_id'].merge(self.File_ids_dict['aliquot'],how = "outer", on = "Biospecimen_ID")
         all_bio_ids = all_bio_ids.merge(self.File_ids_dict['equip'],how='outer',on="Biospecimen_ID")
         all_bio_ids = all_bio_ids.merge(self.File_ids_dict['reagent'],how='outer',on="Biospecimen_ID")
         all_bio_ids = all_bio_ids.merge(self.File_ids_dict['consume'],how='outer',on="Biospecimen_ID")
-        return all_bio_ids    
+        return all_bio_ids
     def merge_tables(self,file_name,data_table):
         drop_list = []
         if file_name == "prior_clinical_test.csv":
@@ -123,24 +124,21 @@ class Submission_Object:
             drop_list = ["Biospecimen_Type"]
         elif file_name in ["aliquot.csv","equipment.csv","reagent.csv","consumable.csv"]:
             data_table = data_table.merge(self.File_ids_dict['bio_id'],how='left',on="Biospecimen_ID")
-            drop_list = ["Biospecimen_Type"]        
-        elif file_name in ["assay.csv"]:
-            data_table = data_table.merge(self.File_ids_dict['assay_target'],how='left',on="Assay_ID")
-            drop_list = ["Assay_Target"]
+            drop_list = ["Biospecimen_Type"]
         elif file_name in ["assay_target.csv"]:
             data_table = data_table.merge(self.File_ids_dict['assay'],how='left',on="Assay_ID")
             drop_list = ["Assay_Name"]
         elif file_name in ["confirmatory_clinical_test.csv"]:
-            data_table = data_table.merge(self.File_ids_dict['demo_id'].drop_duplicates("Research_Participant_ID"),how='left',on="Research_Participant_ID")
             data_table = data_table.merge(self.File_ids_dict['assay'],how='left',on="Assay_ID")
-            drop_list = ["Age","Assay_Name"]
+            data_table = data_table.merge(self.File_ids_dict['assay_target'],how='left',on=["Assay_ID","Assay_Target"])
+            drop_list = ["Assay_Name","Assay_Antigen_Source"]
         return data_table,drop_list
 ##########################################################################################################################
     def add_error_values(self,msg_type,sheet_name,row_index,col_name,col_value,error_msg):
         new_row = {"Message_Type":msg_type,"CSV_Sheet_Name":sheet_name,"Row_Index":row_index,"Column_Name":col_name,"Column_Value":col_value,"Error_Message":error_msg}
         self.Error_list = self.Error_list.append(new_row, ignore_index=True)
     def sort_and_drop(self,header_name,keep_blank = False):
-        self.Error_list.drop_duplicates(["Column_Value"],inplace = True)
+        self.Error_list.drop_duplicates(["Row_Index","Column_Name","Column_Value"],inplace = True)
         if keep_blank == False:
             drop_idx = self.Error_list.query("Column_Name == @header_name and Column_Value == ''").index
             self.Error_list.drop(drop_idx , inplace=True)
@@ -149,6 +147,10 @@ class Submission_Object:
             self.add_error_values(msg_type,sheet_name,i+2,header_name,error_data.loc[i][header_name],error_msg)
         self.sort_and_drop(header_name,keep_blank)
 ###########################################################################################################################
+    def check_assay_special(self,data_table,header_name,file_name,field_name):
+        error_data = data_table.query("{0} != {0}".format(field_name))
+        error_msg = header_name + " is not found in the table of valid " + header_name +"s in databse or submitted file"
+        self.update_error_table("Error",error_data,file_name,header_name,error_msg,keep_blank = False)
     def check_id_field(self,sheet_name,data_table,re,field_name,pattern_str,cbc_id,pattern_error):        
         single_invalid = data_table[data_table[field_name].apply(lambda x : re.compile('^[0-9]{2}' + pattern_str).match(x) is None)]
         wrong_cbc_id   = data_table[data_table[field_name].apply(lambda x : (re.compile('^' + cbc_id + pattern_str).match(x) is None))]
@@ -339,18 +341,35 @@ class Submission_Object:
             error_data = merged_data.query("Biospecimen_Type == 'PBMC' and Biospecimen_Type == Biospecimen_Type and {0} != {0}".format(table_name))
             error_msg = "ID is found in Biospecimen.csv and has Biospecimen_Type of PBMC, however ID is missing from " + sheet_name
             self.update_error_table("Error",error_data,"Cross_Biospecimen_ID.csv","Biospecimen_ID",error_msg)
-    def get_cross_sheet_Biospecimen_ID(self,re,merged_data,valid_cbc,field_name):
+    def get_submitted_ids(self,pd,file_list,col_name,merged_data):
+        all_pass= []
+        for iterF in self.File_dict:
+            if iterF in file_list:
+                all_pass = all_pass + self.File_dict[iterF]['Data_Table'][col_name].tolist()
+        
+        if len(all_pass) == 0:
+            return all_pass
+        else:
+            all_pass = pd.Series(all_pass, name = col_name)
+            merged_data.merge(all_pass,on = col_name, how = "right")
+            return merged_data
+    def get_cross_sheet_Biospecimen_ID(self,pd,re,merged_data,valid_cbc,field_name):
         merged_data = merged_data[merged_data.isna().any(axis=1)]
+        file_list = ['biospecimen.csv','aliquot.csv','equipment.csv','reagent.csv','consumable.csv']
         merged_data = merged_data[merged_data[field_name].apply(lambda x : (re.compile('^' + valid_cbc + '[_]{1}[0-9]{6}[_]{1}[0-9]{3}$').match(x) is not None))]
+        merged_data  = self.get_submitted_ids(pd,file_list,'Biospecimen_ID',merged_data)
         if len(merged_data) > 0:
             self.write_cross_bio_errors(merged_data,"Aliquot_ID","Aliquot.csv")
             self.write_cross_bio_errors(merged_data,"Equipment_ID","Equipment.csv")
             self.write_cross_bio_errors(merged_data,"Reagent_Name","Reagent.csv")
             self.write_cross_bio_errors(merged_data,"Consumable_Name","Consumable.csv")
-    def get_cross_sheet_Participant_ID(self,re,merged_data,valid_cbc,field_name):
+    def get_cross_sheet_Participant_ID(self,pd,re,merged_data,valid_cbc,field_name):
         merged_data = merged_data[merged_data.isna().any(axis=1)]
-        merged_data = merged_data[merged_data[field_name].apply(lambda x : (re.compile('^' + valid_cbc + '[_]{1}[0-9]{6}$').match(x) is not None))]
-        if len(merged_data) > 0:
+        if len(merged_data) > 0:                #if there are unmatcehd IDS then remove bad IDS and filter to submitted list
+            file_list = ['prior_clinical_test.csv','demographic.csv','biospecimen.csv','confirmatory_clinical_test.csv']
+            merged_data = merged_data[merged_data[field_name].apply(lambda x : (re.compile('^' + valid_cbc + '[_]{1}[0-9]{6}$').match(x) is not None))]
+            merged_data  = self.get_submitted_ids(pd,file_list,'Research_Participant_ID',merged_data)
+        if len(merged_data) > 0:                #only checks for errors if there are IDs left after the filtering
             error_msg = "ID is found in Prior_Clinical_Test, but is missing from Demographic and Biospecimen"
             self.write_cross_sheet_id_error(merged_data,"{0} == {0} and {1} != {1} and {2} != {2}",error_msg,field_name)
             error_msg = "ID is found in Demographic, but is missing from Prior_Clinical_Test and Biospecimen"
@@ -398,7 +417,9 @@ class Submission_Object:
         submision_string = self.Submission_Location_Path
         slash_index = [m.start() for m in re.finditer('/',submision_string)]
         file_submitted_by = submision_string[(slash_index[0]+1):(slash_index[1])]
-        return file_submitted_by
+        file_name = self.File_Name
+        org_file_id = str(self.Orig_ID)
+        return file_submitted_by,file_name,org_file_id
     def update_jobs_tables(self,pd,jobs_conn,current_sub_object,error_string,validation_date):
         sql_connect = jobs_conn.cursor()
         sql_connect.execute("select current_user();")
@@ -479,6 +500,13 @@ def get_mysql_queries(pd,conn,index_name):
          sql_querry = "SELECT Reagent_Name,Biospecimen_ID FROM Reagent_Biospecimen;"
     elif index_name == "consumable.csv":
          sql_querry = "SELECT Consumable_Name,Biospecimen_ID FROM Consumable_Biospecimen;"
+    elif index_name == "assay.csv":
+         sql_querry = "SELECT Assay_ID,Assay_Name FROM Assay;"
+    elif index_name == "assay_target.csv":
+          sql_querry = "SELECT Assay_ID,Assay_Target,Assay_Antigen_Source FROM Assay;"
+    elif index_name ==  "confirmatory_clinical_test.csv":
+        sql_querry = "SELECT Research_Participant_ID,Assay_ID FROM Participant_Confirmatory_Assay_Result;"
+         
     curr_ids = pd.read_sql(sql_querry, conn)
     return curr_ids
 def check_for_dependancy(pd,data_table,depend_col,depend_val):
@@ -497,4 +525,3 @@ def check_multi_rule(pd,data_table,depend_col,depend_val):
         data_table = data_table[data_table[depend_col].apply(lambda x: x in depend_val)]
         error_str = depend_col + " is in " +  str(depend_val)
     return data_table,error_str
-
