@@ -83,13 +83,17 @@ class Submission_Object:
                 sql_querry = filesdb_conn.cursor(prepared = True)            
                 sql_querry.execute("SELECT CBC_ID FROM CBC Where CBC_Name = %s",(submit_table.columns.values[1],))
                 self.CBC_ID = sql_querry.fetchall()
-                self.CBC_ID = list(self.CBC_ID)[0][0]
+                if len(self.CBC_ID) == 0:
+                    print("The Submitted CBC name: " + submit_table.columns.values[1] + " does NOT exist in the Database")
+                else:
+                    self.CBC_ID = list(self.CBC_ID)[0][0]
                 self.submit_Participant_IDs = self.File_dict['submission.csv']['Data_Table'][0].iloc[1][1]
                 self.submit_Biospecimen_IDs = self.File_dict['submission.csv']['Data_Table'][0].iloc[2][1]
-            except Exception:
-                 self.CBC_ID = "00"
-                 self.submit_Participant_IDs = "00"
-                 self.submit_Biospecimen_IDs = "00"
+            except Exception as e:
+                print(e)
+                self.CBC_ID = "00"
+                self.submit_Participant_IDs = "00"
+                self.submit_Biospecimen_IDs = "00"
 ##########################################################################################################################
     def populate_list_dict(self,pd,namesdb_conn,curr_sheet,dict_name,column_name_list):
         if curr_sheet in self.File_dict:
@@ -468,8 +472,8 @@ class Submission_Object:
             tuple_list = (str(self.Orig_ID),curr_key,validation_date,str(self.Unzipped_file_id.iloc[iterZ]),"Unknown ARN",status_field[iterZ],batch_status[iterZ],curr_user)
 
             if len(rows) > 0:
-                cols = ", ".join([str(i[1]) + " = '" + tuple_list[i[0]] + "'" for i in enumerate(column_list)])
-                sql = f"UPDATE `table_data_validator` set {cols} where unzipped_file_id = %s"
+                cols = ", `".join([str(i[1]) + "` = '" + tuple_list[i[0]] + "'" for i in enumerate(column_list)])
+                sql = f"UPDATE `table_data_validator` set `{cols[:-1]}' where unzipped_file_id = %s"
                 sql_connect.execute(sql, (str(self.Unzipped_file_id.iloc[iterZ]),))
             else:
                 cols = "`,`".join([str(i) for i in column_list])

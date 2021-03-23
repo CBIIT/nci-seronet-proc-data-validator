@@ -66,7 +66,6 @@ def lambda_handler(event, context):
             current_sub_object.populate_data_tables(pd_s3,curr_sub_table,s3_client,validdb_conn)
             col_error_val = check_submission_quality(current_sub_object,http,slack_failure)
             if col_error_val == -1:
-                print("Errors were found when validating column names.  Unable to Proceed with Validation")
                 if Validation_Type != TEST_MODE:
                     current_sub_object.update_jobs_tables(pd,jobs_conn,current_sub_object,"Column_Error",validation_date)
                 continue
@@ -103,7 +102,6 @@ def lambda_handler(event, context):
             current_sub_object.check_for_dup_ids("demographic.csv",'Research_Participant_ID')
             current_sub_object.check_for_dup_ids("biospecimen.csv",'Biospecimen_ID')
             current_sub_object.check_for_dup_ids("assay.csv",'Assay_ID')
-            
             
             current_sub_object.get_cross_sheet_Participant_ID(pd,re,all_part_ids,valid_cbc_ids,'Research_Participant_ID')
             current_sub_object.get_cross_sheet_Biospecimen_ID(pd,re,all_bio_ids,valid_cbc_ids,'Biospecimen_ID')
@@ -166,9 +164,9 @@ def get_list_of_valid_submissions(pd,jobs_conn,Validation_Type,event):
     if Validation_Type == DB_MODE:
         MY_SQL = ("SELECT sub.orig_file_id,sub.submission_file_id,tbl.unzipped_file_id, sub.submission_validation_file_location, tbl.file_validation_file_location "
                  "FROM table_submission_validator as sub JOIN table_file_validator as tbl "
-                  "ON sub.submission_file_id = tbl.submission_file_id "  
                   "where batch_validation_status = %s and file_validation_status = %s;")
         all_files_to_check = pd.read_sql(MY_SQL, con=jobs_conn, params=["Batch_Validation_SUCCESS","FILE_VALIDATION_IN_PROGRESS"])
+        all_files_to_check = pd.read_sql(MY_SQL, con=jobs_conn, params=["65"])
     else:        
         print("testMode is enabled")
         all_files_to_check = pd.DataFrame(columns = ['orig_file_id', 'submission_file_id', 'unzipped_file_id',
@@ -197,6 +195,9 @@ def check_submission_quality(current_sub_object,http,failure):
     elif len(current_sub_object.Column_error_count) > 0:
         error_count = len(current_sub_object.Column_error_count)
         error_message = "Errors were found in " + str(error_count) + " column names, unable to Validate Submission"
+    elif len(current_sub_object.CBC_ID) == 0:
+        submit_name = current_sub_object.File_dict['submission.csv']['Data_Table'][0].columns[1]
+        error_message = "The Submitted CBC name: " + submit_name + "does NOT exist in the Database"
     if len(error_message) > 0:
         write_slack_error(http,failure,error_message,current_sub_object)
         return -1
