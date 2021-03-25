@@ -128,7 +128,7 @@ def connect_to_sql_database(validdb_name,host_client,user_name,user_password):
     status_message = "Connected"
     conn = []
     try:
-        conn = mysql.connector.MySQLConnection(host = host_client, user=user_name, password=user_password, db=validdb_name, connect_timeout=5)
+        conn = mysql.connector.connect(host = host_client, user=user_name, password=user_password, db=validdb_name, connect_timeout=5)
         print("SUCCESS: Connection to RDS mysql instance succeeded\n")
     except Exception as e:
         print(e)
