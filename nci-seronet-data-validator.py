@@ -1,7 +1,7 @@
 import boto3
 import json
 import urllib3
-import mysql.connector
+import mysql.connector.connection
 import pandas as pd
 import s3 as pd_s3
 import dateutil.tz
