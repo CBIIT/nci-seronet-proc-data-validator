@@ -15,6 +15,10 @@ def Validation_Rules(pd,re,datetime,current_object,data_table,file_name,valid_cb
             Required_column,Rule_Found = check_biospecimen(header_name,current_object,pd,data_table,file_name,datetime,min_date,max_date,Rule_Found,1)
         if file_name in ["aliquot.csv","equipment.csv","reagent.csv","consumable.csv"]:
             Required_column,Rule_Found = check_processing_rules(header_name,current_object,pd,data_table,file_name,datetime,min_date,max_date,Rule_Found,1)
+        if file_name in ["confirmatory_clinical_test.csv"]:
+            Required_column,Rule_Found = check_confimation_rules(header_name,current_object,pd,data_table,file_name,datetime,min_date,max_date,Rule_Found,1)
+        if file_name in ["assay.csv","assay_target.csv"]:
+            Required_column,Rule_Found = check_assay_rules(header_name,current_object,pd,data_table,file_name,datetime,min_date,max_date,Rule_Found,1)
 #################################################################################################################################################
         if (header_name in ['Total_Cells_Hemocytometer_Count', 'Total_Cells_Automated_Count']):
            current_object.compare_total_to_live(pd,file_name,data_table,header_name)
@@ -24,23 +28,49 @@ def Validation_Rules(pd,re,datetime,current_object,data_table,file_name,valid_cb
             print("Column_Name: " + header_name + " has no validation rules set")
         else:
             current_object.get_missing_values(pd,file_name,data_table,header_name,Required_column)
+            
+    if ('Research_Participant_ID' in data_table.columns) and ('Research_Participant_ID' not in drop_list):
+        current_object.Part_List.append(file_name)
+    if ('Biospecimen_ID' in data_table.columns) and ('Biospecimen_ID' not in drop_list):
+        current_object.Bio_List.append(file_name)
     return current_object
+def check_ID_Cross_Sheet(current_object,pd,re):
+    current_object.get_all_part_ids()
+    current_object.get_all_bio_ids()
+    
+    current_object.get_cross_sheet_Participant_ID(pd,re,'Research_Participant_ID')
+    current_object.get_cross_sheet_Biospecimen_ID(pd,re,'Biospecimen_ID')
+    current_object.get_passing_part_ids('Research_Participant_ID')
+    current_object.get_passing_part_ids('Biospecimen_ID')
+            
 def check_ID_validation(header_name,current_object,file_name,data_table,re,valid_cbc_ids,Rule_Found,index,Required_column = "Yes"):
     if header_name in ['Research_Participant_ID']:
         pattern_str = '[_]{1}[0-9]{6}$'
         current_object.check_id_field(file_name,data_table,re,header_name,pattern_str,valid_cbc_ids,"XX_XXXXXX")
+        if (file_name not in ["biospecimen.csv"]):
+            current_object.check_for_dup_ids(file_name,header_name)
     elif (header_name in ["Biospecimen_ID"]):
         pattern_str = '[_]{1}[0-9]{6}[_]{1}[0-9]{3}$'
         current_object.check_id_field(file_name,data_table,re,header_name,pattern_str,valid_cbc_ids,"XX_XXXXXX_XXX")
         if (header_name in ['Research_Participant_ID']) and (header_name in ["Biospecimen_ID"]):
             current_object.check_if_substr(data_table,"Research_Participant_ID","Biospecimen_ID",file_name,header_name)
+        if (file_name in ["biospecimen.csv"]):
+            current_object.check_for_dup_ids(file_name,header_name)
     elif (header_name in ["Aliquot_ID"]):
-        pattern_str = '[_]{1}[0-9]{6}[_]{1}[0-9]{3}[_]{1}[0-9]{2}$$'
+        pattern_str = '[_]{1}[0-9]{6}[_]{1}[0-9]{3}[_]{1}[0-9]{2}$'
         current_object.check_id_field(file_name,data_table,re,header_name,pattern_str,valid_cbc_ids,"XX_XXXXXX_XXX_XX")
         if (header_name in ["Aliquot_ID"]) and (header_name in ["Biospecimen_ID"]):
             current_object.check_if_substr(data_table,"Biospecimen_ID","Aliquot_ID",file_name,header_name)
+        current_object.check_for_dup_ids(file_name,header_name)   
+    elif (header_name in ["Assay_ID"]):
+        pattern_str = '[_]{1}[0-9]{3}$'
+        current_object.check_id_field(file_name,data_table,re,header_name,pattern_str,valid_cbc_ids,"XX_XXX")
+        current_object.check_assay_special(data_table,header_name,file_name,"Assay_Name")
+        if (file_name in ["assay.csv"]):
+            current_object.check_for_dup_ids(file_name,header_name)
     else:
         Rule_Found[index] = False
+  
     return Required_column,Rule_Found
 def check_prior_clinical(header_name,current_object,pd,data_table,file_name,datetime,min_date,max_date,Rule_Found,index,Required_column = "Yes"):
     if header_name in ['SARS_CoV_2_PCR_Test_Result_Provenance']:
@@ -87,7 +117,7 @@ def check_prior_clinical(header_name,current_object,pd,data_table,file_name,date
     return Required_column,Rule_Found
 def check_demographic(header_name,current_object,pd,data_table,file_name,datetime,min_date,max_date,Rule_Found,index,Required_column = "Yes"):
     if (header_name in ['Age']):
-        current_object.check_if_number(pd,file_name,data_table,header_name,"None","None",False,0,200,"int")  
+        current_object.check_if_number(pd,file_name,data_table,header_name,"None","None",False,1,200,"int")
     elif (header_name in ['Race','Ethnicity','Gender']):
         if (header_name in ['Race']):
             list_values =  ['White', 'American Indian or Alaska Native', 'Black or African American', 'Asian',
@@ -143,7 +173,7 @@ def check_biospecimen(header_name,current_object,pd,data_table,file_name,datetim
     elif ((header_name.find('Company_Clinic') > -1) or (header_name.find('Initials') > -1) or (header_name.find('Collection_Tube_Type') > -1)):
         if (header_name in ['Collection_Tube_Type_Lot_Number']):
             Required_column = "No"
-        current_object.check_if_string(pd,file_name,data_table,header_name,"None","None",False)    
+        current_object.check_if_string(pd,file_name,data_table,header_name,"None","None",False)
     elif ('Date_of' in header_name):
         current_object.check_date(pd,datetime,file_name,data_table,header_name,"None","None",False,"Date",min_date,max_date)  
     elif 'Time_of' in header_name:
@@ -185,6 +215,66 @@ def check_processing_rules(header_name,current_object,pd,data_table,file_name,da
         current_object.check_in_list(pd,file_name,data_table,header_name,"Biospecimen_Type",["PBMC"],list_values)           
     elif ("Aliquot" in header_name) or ("Equipment_ID" in header_name):
         current_object.check_if_string(pd,file_name,data_table,header_name,"None","None",False)
+    else:
+        Rule_Found[index] = False
+    return Required_column,Rule_Found
+def check_confimation_rules(header_name,current_object,pd,data_table,file_name,datetime,min_date,max_date,Rule_Found,index,Required_column = "Yes"):
+    if header_name in ["Assay_Target"]:
+        current_object.check_assay_special(data_table,header_name,file_name,"Assay_Antigen_Source")
+    elif (header_name in ["Instrument_ID","Test_Operator_Initials","Assay_Kit_Lot_Number"]):
+        current_object.check_if_string(pd,file_name,data_table,header_name,"None","None",False)
+    elif ('Date_of' in header_name):
+        current_object.check_date(pd,datetime,file_name,data_table,header_name,"None","None",False,"Date",min_date,max_date)  
+    elif 'Time_of' in header_name:
+        current_object.check_date(pd,datetime,file_name,data_table,header_name,"None","None",False,"Time")
+    elif (header_name in ["Assay_Target_Sub_Region","Measurand_Antibody","Interpretation"]):
+        current_object.check_if_string(pd,file_name,data_table,header_name,"None","None",False)
+    elif (header_name in ["Assay_Replicate","Sample_Dilution"]):
+        current_object.check_if_number(pd,file_name,data_table,header_name,"None","None",False,0,200,"int")
+    elif (header_name in ["Derived_Result","Raw_Result","Positive_Control_Reading","Negative_Control_Reading"]):
+        current_object.check_if_number(pd,file_name,data_table,header_name,"None","None",True,0,1e9,"float")
+    elif header_name in ["Sample_Type"]:
+        list_values = ['Serum','Plasma','Venous Whole Blood','Dried Blood Spot','Nasal Swab','Broncheolar Lavage','Sputum']
+        current_object.check_in_list(pd,file_name,data_table,header_name,"None","None",list_values)
+    elif header_name in ["Derived_Result_Units"]:
+         current_object.check_if_string(pd,file_name,data_table,header_name,"Derived_Result","Is A Number",False)
+         current_object.check_in_list(pd,file_name,data_table,header_name,"Derived_Result",["N/A"],["N/A"])
+    elif header_name in ["Raw_Result_Units"]:
+         current_object.check_if_string(pd,file_name,data_table,header_name,"Raw_Result","Is A Number",False)
+         current_object.check_in_list(pd,file_name,data_table,header_name,"Raw_Result",["N/A"],["N/A"])
+    else:
+        Rule_Found[index] = False
+    return Required_column,Rule_Found
+def check_assay_rules(header_name,current_object,pd,data_table,file_name,datetime,min_date,max_date,Rule_Found,index,Required_column = "Yes"):
+    if (header_name in ["Technology_Type","Assay_Name","Assay_Manufacturer","Target_Organism"]):
+        current_object.check_if_string(pd,file_name,data_table,header_name,"None","None",False)
+    elif (header_name in ["EUA_Status","Assay_Multiplicity","Assay_Control_Type","Measurand_Antibody_Type","Assay_Result_Type",
+                          "Peformance_Statistics_Source","Assay_Antigen_Source"]):
+        if (header_name in ["EUA_Status"]):
+            list_values = ['Approved','Submitted','Not Submitted','N/A']
+        if (header_name in ["Assay_Multiplicity"]):
+            list_values =  ['Multiplex', 'Singleplex']
+        if (header_name in ["Assay_Control_Type"]):
+            list_values =  ['Internal', 'External', 'Internal and External', 'N/A']
+        if (header_name in ["Measurand_Antibody_Type"]):
+            list_values = ['IgG', 'IgM', 'IgA' ,'IgG + IgM', 'Total', 'N/A']
+        if (header_name in ["Assay_Result_Type"]):   
+            list_values =  ['Qualitative','Quantitative', 'Semi-Quantitative']
+        if (header_name in ["Peformance_Statistics_Source"]):
+            list_values = ['Manufacturer', 'In-house']
+        if (header_name in ["Assay_Antigen_Source"]):
+            list_values = ['Manufacturer', 'In-house','N/A']
+        current_object.check_in_list(pd,file_name,data_table,header_name,"None","None",list_values)
+    elif ("Target_biospecimen_is_" in header_name):
+        current_object.check_in_list(pd,file_name,data_table,header_name,"None","None",["T","F"])
+    elif (header_name in ["Postive_Control","Negative_Control","Calibration_Type","Calibrator_High_or_Positive","Calibrator_Low_or_Negative"]):
+        current_object.check_if_string(pd,file_name,data_table,header_name,"None","None",True)
+    elif (header_name in ["Assay_Result_Unit","Cut_Off_Unit","Assay_Target"]):
+        current_object.check_if_string(pd,file_name,data_table,header_name,"None","None",False)
+    elif (header_name in ["Positive_Cut_Off_Threshold","Negative_Cut_Off_Ceiling","Assay_Target_Sub_Region"]):
+        current_object.check_if_string(pd,file_name,data_table,header_name,"None","None",True)
+    elif (header_name in ["N_true_positive","N_true_negative","N_false_positive","N_false_negative"]):
+        current_object.check_if_number(pd,file_name,data_table,header_name,"None","None",False,0,1e9,"int")
     else:
         Rule_Found[index] = False
     return Required_column,Rule_Found

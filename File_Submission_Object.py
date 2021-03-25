@@ -13,53 +13,51 @@ class Submission_Object:
         first_folder_cut = self.Submission_Location_Path.find('/')
         self.Bucket_Name = self.Submission_Location_Path[:(first_folder_cut)]
         self.File_Name = pathlib.PurePath(self.Submission_Location_Path).name
-        self.File_dict = {}
-        self.File_ids_dict = {"demo_id":[],"bio_id":[],"prior":[],"aliquot":[],"equip":[],"reagent":[], "consume":[],"assay":[],
-                              "assay_target":[],"confirm":[]}
-        
-        self.Table_library = {"submission.csv":[],"demographic.csv":["Demographic_Data","Comorbidity","Prior_Covid_Outcome","Submission_MetaData"],
-                              "assay.csv":["Assay_Metadata"],"assay_target.csv":["Assay_Target"],"biospecimen.csv":["Biospecimen","Collection_Tube"],
-                              "prior_clinical_test.csv":["Prior_Test_Result"],"aliquot.csv":["Aliquot","Aliquot_Tube"],"equipment.csv":["Equipment"],
-                              "confirmatory_clinical_test.csv":["Confirmatory_Test_Result"], "reagent.csv":["Reagent"],"consumable.csv":["Consumable"]}
-       
+        self.Data_Object_Table = {}
+        self.Part_List = []
+        self.Bio_List = []
+        self.Column_error_count = pd.DataFrame(columns = ["Message_Type","CSV_Sheet_Name","Column_Name","Error_Message"])
+        self.Curr_col_errors = pd.DataFrame(columns = ["Message_Type","CSV_Sheet_Name","Column_Name","Error_Message"])
         self.Error_list = pd.DataFrame(columns = ["Message_Type","CSV_Sheet_Name","Row_Index","Column_Name","Column_Value","Error_Message"])
 ######################################################################################################################
     def get_file_info(self,pd_s3,current_file,s3_client):
         File_Location_Path = current_file['file_validation_file_location']
         first_folder_cut = File_Location_Path.find('/')
         file_name = pathlib.PurePath(File_Location_Path).name
-        self.File_dict[file_name] = {"Bucket_Name":[],"File_Location_Key":[],"Data_Table":[]}
-        self.File_dict[file_name]["Bucket_Name"].append(File_Location_Path[:(first_folder_cut)])
-        self.File_dict[file_name]["File_Location_Key"].append(File_Location_Path[(first_folder_cut+1):])
+        self.Data_Object_Table[file_name] = {"Bucket_Name":[],"File_Location_Key":[],"Data_Table":[]}
+        self.Data_Object_Table[file_name]["Bucket_Name"].append(File_Location_Path[:(first_folder_cut)])
+        self.Data_Object_Table[file_name]["File_Location_Key"].append(File_Location_Path[(first_folder_cut+1):])
         
         self.get_data_tables(pd_s3,s3_client,file_name)
     def get_data_tables(self,pd_s3,s3_client,file_name):
-        bucket_name = self.File_dict[file_name]["Bucket_Name"]
-        key_name = self.File_dict[file_name]["File_Location_Key"]
+        bucket_name = self.Data_Object_Table[file_name]["Bucket_Name"]
+        key_name = self.Data_Object_Table[file_name]["File_Location_Key"]
         Data_Table = pd_s3.get_df_from_keys(s3_client, bucket_name[0], key_name[0] ,format = "csv",na_filter = False)
-        self.File_dict[file_name]["Data_Table"].append(Data_Table)
+        self.Data_Object_Table[file_name]["Data_Table"].append(Data_Table)
         if file_name not in ["submission.csv","shipping_manifest.csv"]:
             self.cleanup_table(file_name)
             self.check_col_names(file_name)            
 ######################################################################################################################
     def cleanup_table(self,file_name):          
-        curr_table = self.File_dict[file_name]["Data_Table"][0]
+        curr_table = self.Data_Object_Table[file_name]["Data_Table"][0]
         curr_table.dropna(axis=0, how="all", thresh=None, subset=None, inplace=True)        #if a row is completely blank remove it
         curr_table = curr_table .loc[:,~ curr_table .columns.str.startswith('Unnamed')]     #if a column is completely blank, remove it
-        self.File_dict[file_name]["Column_Header_List"] = list(curr_table.columns.values)   #list of Column Names
-        self.File_dict[file_name]["File_Size"] = len(curr_table)                            #number of rows in the file
-        self.File_dict[file_name]["Data_Table"] = curr_table
-    def populate_data_tables(self,pd_s3,current_sub,s3_client,filesdb_conn):
+        self.Data_Object_Table[file_name]["File_Size"] = len(curr_table)                            #number of rows in the file
+        self.Data_Object_Table[file_name]["Data_Table"] = curr_table
+    def populate_data_tables(self,pd_s3,current_sub,s3_client,filesdb_conn,col_name_table,col_valid_dict):
+        self.Sql_table_list = col_name_table
+        self.Col_Validation = col_valid_dict
         for iterF in range(len(current_sub.index)):
             self.get_file_info(pd_s3,current_sub.iloc[iterF],s3_client)
-        if "submission.csv" in self.File_dict:
-            submit_table = self.File_dict['submission.csv']['Data_Table'][0]
-            self.get_submission_metadata(s3_client,submit_table,filesdb_conn)
+        if "submission.csv" in self.Data_Object_Table:
+            self.get_submission_metadata(s3_client,filesdb_conn)
 ##########################################################################################################################
     def check_col_names(self,file_name):
-        names_to_check = self.sql_table_list[self.sql_table_list["TABLE_NAME"].apply(lambda x: x in self.Table_library[file_name])]["COLUMN_NAME"].tolist()  
-        in_csv_not_sql = [i for i in self.File_dict[file_name]["Column_Header_List"] if i not in names_to_check]
-        in_sql_not_csv = [i for i in names_to_check if i not in self.File_dict[file_name]["Column_Header_List"]]
+        header_list = self.Data_Object_Table[file_name]['Data_Table'].columns.tolist()
+        curr_cols = self.Col_Validation[file_name]["Check_Tables"]
+        names_to_check = self.Sql_table_list[self.Sql_table_list["TABLE_NAME"].apply(lambda x: x in curr_cols)]["COLUMN_NAME"].tolist()  
+        in_csv_not_sql = [i for i in header_list if i not in names_to_check]
+        in_sql_not_csv = [i for i in names_to_check if i not in header_list]
         
         csv_errors = ["Column Found in CSV is not Expected"] * len(in_csv_not_sql)
         sql_errors = ["This Column is Expected and is missing from CSV File"] * len(in_sql_not_csv)
@@ -72,14 +70,14 @@ class Submission_Object:
             self.Curr_col_errors["Error_Message"] = (csv_errors+sql_errors)
             self.Column_error_count = self.Column_error_count.append(self.Curr_col_errors)
             self.Curr_col_errors.drop(labels = range(0,len(name_list)),axis = 0, inplace = True)    
-    def get_submission_metadata(self,s3_client,submit_table,filesdb_conn):
-        if "submission.csv" not in self.File_dict:
+    def get_submission_metadata(self,s3_client,filesdb_conn):
+        if "submission.csv" not in self.Data_Object_Table:
             print("Submission File was not included in the list of files to validate")
-        elif self.File_dict['submission.csv']['Data_Table'][0] is None:
+        elif self.Data_Object_Table['submission.csv']['Data_Table'][0] is None:
             print("Submission File was not found in " + self.Submission_Location_Path + "/UnZipped_Files")
         else:
             try:
-                submit_table = self.File_dict['submission.csv']['Data_Table'][0]
+                submit_table = self.Data_Object_Table['submission.csv']['Data_Table'][0]
                 sql_querry = filesdb_conn.cursor(prepared = True)            
                 sql_querry.execute("SELECT CBC_ID FROM CBC Where CBC_Name = %s",(submit_table.columns.values[1],))
                 self.CBC_ID = sql_querry.fetchall()
@@ -87,55 +85,65 @@ class Submission_Object:
                     print("The Submitted CBC name: " + submit_table.columns.values[1] + " does NOT exist in the Database")
                 else:
                     self.CBC_ID = list(self.CBC_ID)[0][0]
-                self.submit_Participant_IDs = self.File_dict['submission.csv']['Data_Table'][0].iloc[1][1]
-                self.submit_Biospecimen_IDs = self.File_dict['submission.csv']['Data_Table'][0].iloc[2][1]
+                self.Submit_Participant_IDs = self.Data_Object_Table['submission.csv']['Data_Table'][0].iloc[1][1]
+                self.Submit_Biospecimen_IDs = self.Data_Object_Table['submission.csv']['Data_Table'][0].iloc[2][1]
             except Exception as e:
                 print(e)
                 self.CBC_ID = "00"
-                self.submit_Participant_IDs = "00"
-                self.submit_Biospecimen_IDs = "00"
+                self.Submit_Participant_IDs = "00"
+                self.Submit_Biospecimen_IDs = "00"
 ##########################################################################################################################
-    def populate_list_dict(self,pd,namesdb_conn,curr_sheet,dict_name,column_name_list):
-        if curr_sheet in self.File_dict:
-            self.File_ids_dict[dict_name] = self.File_dict[curr_sheet]['Data_Table'][column_name_list]
-        else:
-            self.File_ids_dict[dict_name] = get_mysql_queries(pd,namesdb_conn,curr_sheet)
-    def get_all_part_ids(self):       
-        all_part_ids = self.File_ids_dict['prior'].merge(self.File_ids_dict['demo_id'],how = "outer", on = "Research_Participant_ID")
-        all_part_ids = all_part_ids.merge(self.File_ids_dict['bio_id'],how='outer',on="Research_Participant_ID")
-        all_part_ids = all_part_ids.merge(self.File_ids_dict['confirm'],how='outer',on="Research_Participant_ID")
-        return all_part_ids
-    def get_all_bio_ids(self):       
-        all_bio_ids = self.File_ids_dict['bio_id'].merge(self.File_ids_dict['aliquot'],how = "outer", on = "Biospecimen_ID")
-        all_bio_ids = all_bio_ids.merge(self.File_ids_dict['equip'],how='outer',on="Biospecimen_ID")
-        all_bio_ids = all_bio_ids.merge(self.File_ids_dict['reagent'],how='outer',on="Biospecimen_ID")
-        all_bio_ids = all_bio_ids.merge(self.File_ids_dict['consume'],how='outer',on="Biospecimen_ID")
-        return all_bio_ids
+    def populate_list_dict(self,pd,namesdb_conn):
+        for iterZ in self.Col_Validation:
+            column_name_list = self.Col_Validation[iterZ]["Merge_Cols"]
+            if len(column_name_list) == 0:
+                 self.Data_Object_Table[iterZ]["Merged_Table"] = []
+            elif iterZ in self.Data_Object_Table:
+                self.Data_Object_Table[iterZ]["Merged_Table"] = self.Data_Object_Table[iterZ]['Data_Table'][column_name_list]
+            else:
+                self.Data_Object_Table[iterZ] = {"Merged_Table":[]}
+                self.Data_Object_Table[iterZ]["Merged_Table"] = get_mysql_queries(pd,namesdb_conn,iterZ)
+    def get_all_part_ids(self):
+        prior_ids = self.Data_Object_Table["prior_clinical_test.csv"]["Merged_Table"]
+        demo_ids = self.Data_Object_Table["demographic.csv"]["Merged_Table"]
+        bio_ids = self.Data_Object_Table["biospecimen.csv"]["Merged_Table"]
+        confirm_ids = self.Data_Object_Table["confirmatory_clinical_test.csv"]["Merged_Table"]
+        
+        all_part_ids = prior_ids.merge(demo_ids,how = "outer", on = "Research_Participant_ID")
+        all_part_ids = all_part_ids.merge(bio_ids,how='outer',on="Research_Participant_ID")
+        all_part_ids = all_part_ids.merge(confirm_ids,how='outer',on="Research_Participant_ID")
+        self.all_part_ids = all_part_ids
+    def get_all_bio_ids(self): 
+        bio_ids = self.Data_Object_Table["biospecimen.csv"]["Merged_Table"]
+        aliquot_ids = self.Data_Object_Table["aliquot.csv"]["Merged_Table"]
+        equip_ids = self.Data_Object_Table["equipment.csv"]["Merged_Table"]
+        reagent_ids = self.Data_Object_Table["reagent.csv"]["Merged_Table"]
+        consume_ids = self.Data_Object_Table["consumable.csv"]["Merged_Table"]        
+        
+        all_bio_ids = bio_ids.merge(aliquot_ids,how = "outer", on = "Biospecimen_ID")
+        all_bio_ids = all_bio_ids.merge(equip_ids,how='outer',on="Biospecimen_ID")
+        all_bio_ids = all_bio_ids.merge(reagent_ids,how='outer',on="Biospecimen_ID")
+        all_bio_ids = all_bio_ids.merge(consume_ids,how='outer',on="Biospecimen_ID")
+        self.all_bio_ids = all_bio_ids
     def merge_tables(self,file_name,data_table):
-        drop_list = []
+        col_list = data_table.columns
         if file_name == "prior_clinical_test.csv":
-            data_table = data_table.merge(self.File_ids_dict['demo_id'].drop_duplicates("Research_Participant_ID"),how='left',on="Research_Participant_ID")
-            drop_list = ["Age","Biospecimen_ID","Biospecimen_Type"]
+            data_table = data_table.merge(self.Data_Object_Table["demographic.csv"]["Merged_Table"],how='left',on="Research_Participant_ID")
         elif file_name == "demographic.csv":
-            data_table = data_table.merge(self.File_ids_dict['prior'],how='left',on="Research_Participant_ID")
-            drop_list = ["SARS_CoV_2_PCR_Test_Result","Biospecimen_ID","Biospecimen_Type"]
+            data_table = data_table.merge(self.Data_Object_Table["prior_clinical_test.csv"]["Merged_Table"],how='left',on="Research_Participant_ID")
         elif file_name == "biospecimen.csv":
-            data_table = data_table.merge(self.File_ids_dict['prior'].drop_duplicates("Research_Participant_ID"),how='left',on="Research_Participant_ID")
-            data_table = data_table.merge(self.File_ids_dict['demo_id'].drop_duplicates("Research_Participant_ID"),how='left',on="Research_Participant_ID")
-            drop_list = ["Age","SARS_CoV_2_PCR_Test_Result"]
+            data_table = data_table.merge(self.Data_Object_Table["prior_clinical_test.csv"]["Merged_Table"],how='left',on="Research_Participant_ID")
+            data_table = data_table.merge(self.Data_Object_Table["demographic.csv"]["Merged_Table"],how='left',on="Research_Participant_ID")
         elif file_name in ["aliquot.csv","equipment.csv","reagent.csv","consumable.csv"]:
-            data_table = data_table.merge(self.File_ids_dict['bio_id'],how='left',on="Biospecimen_ID")
-            drop_list = ["Biospecimen_Type"]
+            data_table = data_table.merge(self.Data_Object_Table["biospecimen.csv"]["Merged_Table"],how='left',on="Biospecimen_ID")
         elif file_name in ["aliquot.csv","equipment.csv","reagent.csv","consumable.csv"]:
-            data_table = data_table.merge(self.File_ids_dict['bio_id'],how='left',on="Biospecimen_ID")
-            drop_list = ["Biospecimen_Type"]
+            data_table = data_table.merge(self.Data_Object_Table["biospecimen.csv"]["Merged_Table"],how='left',on="Biospecimen_ID")
         elif file_name in ["assay_target.csv"]:
-            data_table = data_table.merge(self.File_ids_dict['assay'],how='left',on="Assay_ID")
-            drop_list = ["Assay_Name"]
+            data_table = data_table.merge(self.Data_Object_Table["assay.csv"]["Merged_Table"],how='left',on="Assay_ID")
         elif file_name in ["confirmatory_clinical_test.csv"]:
-            data_table = data_table.merge(self.File_ids_dict['assay'],how='left',on="Assay_ID")
-            data_table = data_table.merge(self.File_ids_dict['assay_target'],how='left',on=["Assay_ID","Assay_Target"])
-            drop_list = ["Assay_Name","Assay_Antigen_Source"]
+            data_table = data_table.merge(self.Data_Object_Table["assay.csv"]["Merged_Table"],how='left',on="Assay_ID")
+            data_table = data_table.merge(self.Data_Object_Table["assay_target.csv"]["Merged_Table"],how='left',on=["Assay_ID","Assay_Target"])
+        drop_list = [i for i in data_table.columns if i not in col_list]
         return data_table,drop_list
 ##########################################################################################################################
     def add_error_values(self,msg_type,sheet_name,row_index,col_name,col_value,error_msg):
@@ -171,8 +179,8 @@ class Submission_Object:
             self.add_error_values("Error",sheet_name,i+2,field_name,wrong_cbc_id[field_name][i],error_msg)
         self.sort_and_drop(field_name)
     def check_for_dup_ids(self,sheet_name,field_name):
-        if sheet_name in self.File_dict:
-            data_table = self.File_dict[sheet_name]['Data_Table']
+        if sheet_name in self.Data_Object_Table:
+            data_table = self.Data_Object_Table[sheet_name]['Data_Table']
             table_counts = data_table[field_name].value_counts(dropna=False).to_frame()
             dup_id_count = table_counts[table_counts[field_name] >  1]
             for i in dup_id_count.index:
@@ -347,9 +355,9 @@ class Submission_Object:
             self.update_error_table("Error",error_data,"Cross_Biospecimen_ID.csv","Biospecimen_ID",error_msg)
     def get_submitted_ids(self,pd,file_list,col_name,merged_data):
         all_pass= []
-        for iterF in self.File_dict:
+        for iterF in self.Data_Object_Table:
             if iterF in file_list:
-                all_pass = all_pass + self.File_dict[iterF]['Data_Table'][col_name].tolist()
+                all_pass = all_pass + self.Data_Object_Table[iterF]['Data_Table'][col_name].tolist()
         
         if len(all_pass) == 0:
             return all_pass
@@ -357,21 +365,21 @@ class Submission_Object:
             all_pass = pd.Series(all_pass, name = col_name)
             merged_data.merge(all_pass,on = col_name, how = "right")
             return merged_data
-    def get_cross_sheet_Biospecimen_ID(self,pd,re,merged_data,valid_cbc,field_name):
-        merged_data = merged_data[merged_data.isna().any(axis=1)]
+    def get_cross_sheet_Biospecimen_ID(self,pd,re,field_name):
+        merged_data = self.all_bio_ids[self.all_bio_ids.isna().any(axis=1)]
         file_list = ['biospecimen.csv','aliquot.csv','equipment.csv','reagent.csv','consumable.csv']
-        merged_data = merged_data[merged_data[field_name].apply(lambda x : (re.compile('^' + valid_cbc + '[_]{1}[0-9]{6}[_]{1}[0-9]{3}$').match(x) is not None))]
+        merged_data = merged_data[merged_data[field_name].apply(lambda x : (re.compile('^' + self.CBC_ID + '[_]{1}[0-9]{6}[_]{1}[0-9]{3}$').match(x) is not None))]
         merged_data  = self.get_submitted_ids(pd,file_list,'Biospecimen_ID',merged_data)
         if len(merged_data) > 0:
             self.write_cross_bio_errors(merged_data,"Aliquot_ID","Aliquot.csv")
             self.write_cross_bio_errors(merged_data,"Equipment_ID","Equipment.csv")
             self.write_cross_bio_errors(merged_data,"Reagent_Name","Reagent.csv")
             self.write_cross_bio_errors(merged_data,"Consumable_Name","Consumable.csv")
-    def get_cross_sheet_Participant_ID(self,pd,re,merged_data,valid_cbc,field_name):
-        merged_data = merged_data[merged_data.isna().any(axis=1)]
+    def get_cross_sheet_Participant_ID(self,pd,re,field_name):
+        merged_data = self.all_part_ids[self.all_part_ids.isna().any(axis=1)]
         if len(merged_data) > 0:                #if there are unmatcehd IDS then remove bad IDS and filter to submitted list
             file_list = ['prior_clinical_test.csv','demographic.csv','biospecimen.csv','confirmatory_clinical_test.csv']
-            merged_data = merged_data[merged_data[field_name].apply(lambda x : (re.compile('^' + valid_cbc + '[_]{1}[0-9]{6}$').match(x) is not None))]
+            merged_data = merged_data[merged_data[field_name].apply(lambda x : (re.compile('^' + self.CBC_ID + '[_]{1}[0-9]{6}$').match(x) is not None))]
             merged_data  = self.get_submitted_ids(pd,file_list,'Research_Participant_ID',merged_data)
         if len(merged_data) > 0:                #only checks for errors if there are IDs left after the filtering
             error_msg = "ID is found in Prior_Clinical_Test, but is missing from Demographic and Biospecimen"
@@ -386,19 +394,23 @@ class Submission_Object:
             self.write_cross_sheet_id_error(merged_data,"{0} == {0} and {1} != {1} and {2} == {2}",error_msg,field_name)
             error_msg = "ID is found in Demographic and Biospecimen but is missing from Prior_Clinical_Test"
             self.write_cross_sheet_id_error(merged_data,"{0} != {0} and {1} == {1} and {2} == {2}",error_msg,field_name)
-    def get_passing_part_ids(self,check_list,check_field):
+    def get_passing_part_ids(self,check_field):
         all_pass = []
+        if check_field in ['Research_Participant_ID']:
+            check_list = self.Part_List
+        elif check_field in ['Biospecimen_ID']:
+            check_list = self.Bio_List
         for iterD in check_list:
-            if iterD in self.File_dict:
-                submit_ids = self.File_dict[iterD]['Data_Table'][check_field].tolist()
+            if iterD in self.Data_Object_Table:
+                submit_ids = self.Data_Object_Table[iterD]['Data_Table'][check_field].tolist()
                 error_table = self.Error_list.query("CSV_Sheet_Name == @iterD and Column_Name == @check_field and Row_Index >= 0")
                 pass_ids = [i for i in submit_ids if i not in error_table['Column_Value'].tolist()]
                 all_pass = all_pass + pass_ids
         all_pass_count = len((set(all_pass)))
-        if (int(self.submit_Participant_IDs) != all_pass_count) and (check_field == "Research_Participant_ID"):
+        if (int(self.Submit_Participant_IDs) != all_pass_count) and (check_field == "Research_Participant_ID"):
             error_msg = "After validation only " + str(all_pass_count) + " Participat IDS are valid"
             self.add_error_values("Error","submission.csv",-5,"submit_Participant_IDs",self.submit_Participant_IDs,error_msg)
-        elif (int(self.submit_Biospecimen_IDs) != all_pass_count) and (check_field == "Biospecimen_ID"):
+        elif (int(self.Submit_Biospecimen_IDs) != all_pass_count) and (check_field == "Biospecimen_ID"):
             error_msg = "After validation only " + str(all_pass_count) + " Biospecimen IDS are valid"
             self.add_error_values("Error","submission.csv",-5,"submit_Biospecimen_IDs",self.submit_Biospecimen_IDs,error_msg)     
 ##########################################################################################################################
@@ -437,12 +449,12 @@ class Submission_Object:
         column_list = ["orig_file_id", "data_validation_result_location", "data_validation_date", "unzipped_file_id", 
                        "data_validation_notification_arn","data_validation_status", "batch_validation_status", "data_validation_updatedby"]
         
-        file_count = len(self.File_dict)
+        file_count = len(self.Data_Object_Table)
         key_name, separator, after = self.Submission_Location_Path.rpartition('/')
         curr_key = key_name + "/Data_Validation_Results/"
               
         status_field = []
-        for iterZ in self.File_dict:
+        for iterZ in self.Data_Object_Table:
             if len(error_table.query("CSV_Sheet_Name == @iterZ and Message_Type == 'Error'")) > 0:
                 if error_string == "Column_Error":
                     status_field.append("FILE_NOT_PROCESSED_COLUMN_ERRORS_FOUND")

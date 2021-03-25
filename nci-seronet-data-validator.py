@@ -11,12 +11,25 @@ import re
 
 import File_Submission_Object
 from Validation_Rules import Validation_Rules
+from Validation_Rules import check_ID_Cross_Sheet
 #############################################################################################################  
 DB_MODE = "DB_Mode"
 TEST_MODE = "Test_Mode"
 eastern = dateutil.tz.gettz('US/Eastern')                                   #converts time into Eastern time zone (def is UTC)
 validation_date = datetime.datetime.now(tz=eastern).strftime("%Y-%m-%d %H:%M:%S")
-#############################################################################################################  
+#############################################################################################################
+col_valid_dict = {"prior_clinical_test.csv":{"Check_Tables":["Prior_Test_Result"],"Merge_Cols":["Research_Participant_ID","SARS_CoV_2_PCR_Test_Result"]},
+                  "demographic.csv":{"Check_Tables":["Demographic_Data","Comorbidity","Prior_Covid_Outcome","Submission_MetaData"],"Merge_Cols":["Research_Participant_ID","Age"]},
+                  "biospecimen.csv":{"Check_Tables":["Biospecimen","Collection_Tube"],"Merge_Cols":["Research_Participant_ID","Biospecimen_ID","Biospecimen_Type"]},
+                  "aliquot.csv":{"Check_Tables":["Aliquot","Aliquot_Tube"],"Merge_Cols":["Aliquot_ID","Biospecimen_ID"]},
+                  "equipment.csv":{"Check_Tables":["Equipment"],"Merge_Cols":["Equipment_ID","Biospecimen_ID"]},
+                  "reagent.csv":{"Check_Tables":["Reagent"],"Merge_Cols":["Reagent_Name","Biospecimen_ID"]},
+                  "consumable.csv":{"Check_Tables":["Consumable"],"Merge_Cols":["Consumable_Name","Biospecimen_ID"]},
+                  "assay.csv":{"Check_Tables":["Assay_Metadata"],"Merge_Cols":["Assay_ID","Assay_Name"]},
+                  "assay_target.csv":{"Check_Tables":["Assay_Target"],"Merge_Cols":["Assay_ID","Assay_Target","Assay_Antigen_Source"]},
+                  "confirmatory_clinical_test.csv":{"Check_Tables":["Confirmatory_Test_Result"],"Merge_Cols":["Research_Participant_ID","Assay_ID"]},
+                  "submission.csv":{"Check_Tables":[],"Merge_Cols":[]}}
+#############################################################################################################
 def lambda_handler(event, context):
     s3_client = boto3.client('s3')
     ssm = boto3.client("ssm")
@@ -50,7 +63,7 @@ def lambda_handler(event, context):
     if len(submission_list) == 0:
         print("There are no new files to process.")
         return{}
-    col_name_table = get_sql_table_names(pd,namesdb_conn,names_dbname) 
+    col_name_table = get_sql_table_names(pd,namesdb_conn,names_dbname)
     valid_ids = list(set(submission_list['orig_file_id']))
             
     for iterS in valid_ids:
@@ -59,54 +72,31 @@ def lambda_handler(event, context):
             current_sub_object = File_Submission_Object.Submission_Object(pd,curr_sub_table)
             print("\n## Starting the Data Validation Proccess for " + current_sub_object.File_Name + " ##\n")
             
-            current_sub_object.Column_error_count = pd.DataFrame(columns = ["Message_Type","CSV_Sheet_Name","Column_Name","Error_Message"])
-            current_sub_object.Curr_col_errors = pd.DataFrame(columns = ["Message_Type","CSV_Sheet_Name","Column_Name","Error_Message"])
-            
-            current_sub_object.sql_table_list = col_name_table
-            current_sub_object.populate_data_tables(pd_s3,curr_sub_table,s3_client,validdb_conn)
+            current_sub_object.populate_data_tables(pd_s3,curr_sub_table,s3_client,validdb_conn, col_name_table,col_valid_dict)
             col_error_val = check_submission_quality(current_sub_object,http,slack_failure)
             if col_error_val == -1:
                 if Validation_Type != TEST_MODE:
                     current_sub_object.update_jobs_tables(pd,jobs_conn,current_sub_object,"Column_Error",validation_date)
                 continue
-#########################################################################################################################################
-            current_sub_object.populate_list_dict(pd,validdb_conn,"prior_clinical_test.csv",'prior',["Research_Participant_ID","SARS_CoV_2_PCR_Test_Result"])
-            current_sub_object.populate_list_dict(pd,validdb_conn,"demographic.csv",'demo_id',["Research_Participant_ID","Age"])
-            current_sub_object.populate_list_dict(pd,validdb_conn,"biospecimen.csv","bio_id",["Research_Participant_ID","Biospecimen_ID","Biospecimen_Type"])
-            current_sub_object.populate_list_dict(pd,validdb_conn,"aliquot.csv",'aliquot',["Aliquot_ID","Biospecimen_ID"])
-            current_sub_object.populate_list_dict(pd,validdb_conn,"equipment.csv",'equip',["Equipment_ID","Biospecimen_ID"])
-            current_sub_object.populate_list_dict(pd,validdb_conn,"reagent.csv","reagent",["Reagent_Name","Biospecimen_ID"])
-            current_sub_object.populate_list_dict(pd,validdb_conn,"consumable.csv","consume",["Consumable_Name","Biospecimen_ID"])
-            current_sub_object.populate_list_dict(pd,validdb_conn,"assay.csv","assay",["Assay_ID","Assay_Name"])
-            current_sub_object.populate_list_dict(pd,validdb_conn,"assay_target.csv","assay_target",["Assay_ID","Assay_Target","Assay_Antigen_Source"])
-            current_sub_object.populate_list_dict(pd,validdb_conn,"confirmatory_clinical_test.csv","confirm",["Research_Participant_ID","Assay_ID"])
-            
-            all_part_ids = current_sub_object.get_all_part_ids()
-            all_bio_ids = current_sub_object.get_all_bio_ids()
+            current_sub_object.populate_list_dict(pd,validdb_conn)
 ##########################################################################################################################################
             valid_cbc_ids = current_sub_object.CBC_ID
-            for file_name in current_sub_object.File_dict:
+            for file_name in current_sub_object.Data_Object_Table:
                 if file_name not in ["submission.csv","shipping_manifest.csv"]:
-                    data_table = current_sub_object.File_dict[file_name]['Data_Table']
-                    data_table,drop_list = current_sub_object.merge_tables(file_name,data_table)
-                    try:
-                        col_names = data_table.columns
-                        data_table = pd.DataFrame([convert_data_type(c) for c in l] for l in data_table.values)
-                        data_table.columns = col_names
-                    except Exception as e:
-                        print(e)
-##########################################################################################################################################              
-                    Validation_Rules(pd,re,datetime,current_sub_object,data_table,file_name,valid_cbc_ids,drop_list)
+                    if "Data_Table" in current_sub_object.Data_Object_Table[file_name]:
+                        data_table = current_sub_object.Data_Object_Table[file_name]['Data_Table']
+                        data_table,drop_list = current_sub_object.merge_tables(file_name,data_table)
+                        try:
+                            col_names = data_table.columns
+                            data_table = pd.DataFrame([convert_data_type(c) for c in l] for l in data_table.values)
+                            data_table.columns = col_names
+                            current_sub_object = Validation_Rules(pd,re,datetime,current_sub_object,data_table,file_name,valid_cbc_ids,drop_list)
+                        except Exception as e:
+                            print(e)
+                    else:
+                        print (file_name + " was not included in the submission")
 ##########################################################################################################################################
-            current_sub_object.check_for_dup_ids("prior_clinical_test.csv",'Research_Participant_ID')
-            current_sub_object.check_for_dup_ids("demographic.csv",'Research_Participant_ID')
-            current_sub_object.check_for_dup_ids("biospecimen.csv",'Biospecimen_ID')
-            current_sub_object.check_for_dup_ids("assay.csv",'Assay_ID')
-            
-            current_sub_object.get_cross_sheet_Participant_ID(pd,re,all_part_ids,valid_cbc_ids,'Research_Participant_ID')
-            current_sub_object.get_cross_sheet_Biospecimen_ID(pd,re,all_bio_ids,valid_cbc_ids,'Biospecimen_ID')
-            current_sub_object.get_passing_part_ids(["prior_clinical_test.csv","demographic.csv","biospecimen.csv"],'Research_Participant_ID')
-            current_sub_object.get_passing_part_ids(["biospecimen.csv","aliquot.csv","reagent.csv","equipment.csv","consumable.csv"],'Biospecimen_ID')
+            check_ID_Cross_Sheet(current_sub_object,pd,re)         
 ##########################################################################################################################################
             try:
                 write_message_to_slack(http,current_sub_object,slack_success,slack_failure)
@@ -188,15 +178,15 @@ def get_list_of_valid_submissions(pd,jobs_conn,Validation_Type,event):
     return all_files_to_check
 def check_submission_quality(current_sub_object,http,failure):
     error_message  = []
-    if "submission.csv" not in current_sub_object.File_dict:
+    if "submission.csv" not in current_sub_object.Data_Object_Table:
         error_message = "Submission File was not included in the list of files to validate"
-    elif current_sub_object.File_dict['submission.csv']['Data_Table'][0] is None:
+    elif current_sub_object.Data_Object_Table['submission.csv']['Data_Table'][0] is None:
         error_message = "Submission File was not found in the S3 Bucket"
     elif len(current_sub_object.Column_error_count) > 0:
         error_count = len(current_sub_object.Column_error_count)
         error_message = "Errors were found in " + str(error_count) + " column names, unable to Validate Submission"
     elif len(current_sub_object.CBC_ID) == 0:
-        submit_name = current_sub_object.File_dict['submission.csv']['Data_Table'][0].columns[1]
+        submit_name = current_sub_object.Data_Object_Table['submission.csv']['Data_Table'][0].columns[1]
         error_message = "The Submitted CBC name: " + submit_name + "does NOT exist in the Database"
     if len(error_message) > 0:
         write_slack_error(http,failure,error_message,current_sub_object)
@@ -233,7 +223,7 @@ def populate_slack_string(final_table,query_str,test_str,table_col):
         test_str = ', '.join(files_with_errors)
     return test_str
 def get_error_lists(current_submission,passString,pass_warn_String,failString):
-    final_table = pd.DataFrame(0, index=current_submission.File_dict, columns=["Error","Warning"])
+    final_table = pd.DataFrame(0, index=current_submission.Data_Object_Table, columns=["Error","Warning"])
     test_table = pd.crosstab(current_submission.Error_list['CSV_Sheet_Name'],current_submission.Error_list['Message_Type'])
     test_table = fix_table(test_table,"Warning")
     test_table = fix_table(test_table,"Error")    
