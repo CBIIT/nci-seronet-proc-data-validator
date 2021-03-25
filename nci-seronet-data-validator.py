@@ -1,7 +1,7 @@
 import boto3
 import json
 import urllib3
-import mysql.connector as sql_connect
+import mysql.connector
 import pandas as pd
 import s3 as pd_s3
 import dateutil.tz
@@ -128,14 +128,14 @@ def connect_to_sql_database(validdb_name,host_client,user_name,user_password):
     status_message = "Connected"
     conn = []
     try:
-        conn = sql_connect.connect(host = host_client, user=user_name, password=user_password, db=validdb_name, connect_timeout=5)
+        conn = mysql.connector.MySQLConnection(host = host_client, user=user_name, password=user_password, db=validdb_name, connect_timeout=5)
         print("SUCCESS: Connection to RDS mysql instance succeeded\n")
     except Exception as e:
         print(e)
         status_message = "Connection Failed"
     return conn,status_message
 def close_connections(conn):
-    if isinstance(conn,sql_connect.MySQLConnection):
+    if isinstance(conn,mysql.connector.MySQLConnection):
         conn.close()
 def stop_validation(jobs_conn,namesdb_conn,validdb_conn):
     print("Terminating The Data Validation Process")
